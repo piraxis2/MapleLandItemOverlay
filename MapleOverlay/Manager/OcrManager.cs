@@ -32,7 +32,6 @@ namespace MapleOverlay.Manager
                 if (!Directory.Exists(dataPath))
                 {
                     Log("[Error] tessdata folder NOT found!");
-                    // 개발 환경 등 상위 폴더 체크
                     string upPath = Path.Combine(basePath, "..", "tessdata");
                     if (Directory.Exists(upPath))
                     {
@@ -43,18 +42,8 @@ namespace MapleOverlay.Manager
                 else
                 {
                     Log("[Init] tessdata folder found.");
-                    string trainFile = Path.Combine(dataPath, $"{language}.traineddata");
-                    if (File.Exists(trainFile))
-                    {
-                        Log($"[Init] {language}.traineddata found.");
-                    }
-                    else
-                    {
-                        Log($"[Error] {language}.traineddata NOT found at {trainFile}");
-                    }
                 }
 
-                // Costura.Fody 사용 시 일반적인 초기화로 충분함
                 _engine = new TesseractEngine(dataPath, language, EngineMode.LstmOnly);
                 Log("[Init] Engine initialized successfully.");
             }
@@ -79,11 +68,41 @@ namespace MapleOverlay.Manager
             catch { }
         }
 
+        // [추가] 숫자 인식 전용 메서드
+        public string RecognizeNumbers(Bitmap bitmap)
+        {
+            if (_engine == null) return null;
+
+            // 기존 whitelist 값 저장
+            _engine.TryGetStringVariable("tessedit_char_whitelist", out string originalWhitelist);
+            
+            try
+            {
+                // 숫자 및 관련 기호만 인식하도록 설정
+                _engine.SetVariable("tessedit_char_whitelist", "0123456789().[]%");
+                Log("[Recognize] Set whitelist for numbers.");
+
+                // 일반 인식 로직과 동일하게 수행
+                return RecognizeInternal(bitmap, "Numbers");
+            }
+            finally
+            {
+                // whitelist 설정 원상복구
+                _engine.SetVariable("tessedit_char_whitelist", originalWhitelist);
+                Log("[Recognize] Reset whitelist.");
+            }
+        }
+
         public string RecognizeText(Bitmap bitmap)
+        {
+            return RecognizeInternal(bitmap, "Text");
+        }
+
+        private string RecognizeInternal(Bitmap bitmap, string mode)
         {
             if (_engine == null)
             {
-                Log("[Error] Engine is null. Cannot recognize.");
+                Log($"[{mode}] Engine is null. Cannot recognize.");
                 return null;
             }
 
@@ -92,59 +111,37 @@ namespace MapleOverlay.Manager
                 using (var processedBitmap = PreprocessImage(bitmap))
                 {
                     try {
-                        string debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_processed.png");
+                        string debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"debug_processed_{mode}.png");
                         processedBitmap.Save(debugPath, System.Drawing.Imaging.ImageFormat.Png);
                     } catch { }
 
-                    using (var stream = new MemoryStream())
+                    using (var pix = Pix.LoadFromMemory(BitmapToBytes(processedBitmap)))
                     {
-                        processedBitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
-                        var buffer = stream.ToArray();
-
-                        using (var pix = Pix.LoadFromMemory(buffer))
+                        using (var page = _engine.Process(pix, PageSegMode.SingleLine))
                         {
-                            string resultText = null;
-
-                            using (var page = _engine.Process(pix, PageSegMode.SingleLine))
-                            {
-                                var text = page.GetText()?.Trim();
-                                var confidence = page.GetMeanConfidence();
-                                Log($"[Recognize] SingleLine: '{text}' (Conf: {confidence})");
-
-                                if (!string.IsNullOrWhiteSpace(text) && confidence > 0.6)
-                                {
-                                    resultText = text;
-                                }
-                            }
-
-                            if (resultText == null)
-                            {
-                                using (var pageRetry = _engine.Process(pix, PageSegMode.RawLine))
-                                {
-                                    var text = pageRetry.GetText()?.Trim();
-                                    Log($"[Recognize] RawLine: '{text}'");
-                                    if (!string.IsNullOrWhiteSpace(text)) resultText = text;
-                                }
-                            }
-
-                            if (resultText == null)
-                            {
-                                using (var pageRetry2 = _engine.Process(pix, PageSegMode.SparseText))
-                                {
-                                    resultText = pageRetry2.GetText()?.Trim();
-                                    Log($"[Recognize] SparseText: '{resultText}'");
-                                }
-                            }
-
-                            return CorrectTypo(resultText);
+                            var text = page.GetText()?.Trim();
+                            var confidence = page.GetMeanConfidence();
+                            Log($"[{mode}] Recognized: '{text}' (Conf: {confidence})");
+                            
+                            // 숫자 모드가 아닐 때만 오타 보정
+                            return mode == "Text" ? CorrectTypo(text) : text;
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Log($"[Error] Recognition Failed: {ex.Message}");
+                Log($"[{mode}] Recognition Failed: {ex.Message}");
                 return null;
+            }
+        }
+
+        private byte[] BitmapToBytes(Bitmap bitmap)
+        {
+            using (var stream = new MemoryStream())
+            {
+                bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
+                return stream.ToArray();
             }
         }
 
@@ -170,7 +167,7 @@ namespace MapleOverlay.Manager
 
         public Bitmap PreprocessImage(Bitmap original)
         {
-            int scale = 3;
+            int scale = 4;
             int newWidth = original.Width * scale;
             int newHeight = original.Height * scale;
 

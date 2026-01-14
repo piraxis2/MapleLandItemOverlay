@@ -10,7 +10,7 @@
         ShowInTaskbar="True">
     
     <Grid>
-        <!-- 1. 정보 패널 (중앙) -->
+        <!-- 1. 아이템 정보 패널 -->
         <Border x:Name="InfoPanel" 
                 Width="300"
                 MaxHeight="600"
@@ -18,14 +18,15 @@
                 CornerRadius="10" 
                 HorizontalAlignment="Center" 
                 VerticalAlignment="Center"
-                Visibility="Hidden">
+                Visibility="Hidden"
+                MouseLeftButtonDown="Panel_MouseLeftButtonDown">
             
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/> <!-- 닫기 버튼 -->
-                    <RowDefinition Height="*"/>    <!-- 내용 -->
-                    <RowDefinition Height="Auto"/> <!-- 검색창 -->
-                    <RowDefinition Height="Auto"/> <!-- [추가] 단축키 안내 -->
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 닫기 버튼 -->
@@ -67,10 +68,10 @@
                     </Grid>
                 </Border>
 
-                <!-- [이동됨] 단축키 안내 -->
+                <!-- 단축키 안내 -->
                 <TextBlock x:Name="KeyGuideText" 
                            Grid.Row="3"
-                           Text="캡처: ` | 검색: \ | 종료: F10" 
+                           Text="메뉴: ` | 닫기: ESC | 종료: F10" 
                            Foreground="#888888" 
                            FontSize="11" 
                            HorizontalAlignment="Center"
@@ -78,13 +79,188 @@
             </Grid>
         </Border>
 
-        <!-- 2. 캡처 모드용 오버레이 -->
+        <!-- 2. 경험치 측정 패널 -->
+        <Border x:Name="ExpPanel" 
+                Width="320"
+                Background="#EE001100" 
+                CornerRadius="10" 
+                BorderBrush="#00FF00"
+                BorderThickness="1"
+                HorizontalAlignment="Center" 
+                VerticalAlignment="Center"
+                Visibility="Hidden"
+                MouseLeftButtonDown="Panel_MouseLeftButtonDown">
+            <Grid Margin="15">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- 제목 & 닫기 -->
+                    <RowDefinition Height="Auto"/> <!-- 상태 표시 -->
+                    <RowDefinition Height="Auto"/> <!-- 수동 입력 -->
+                    <RowDefinition Height="Auto"/> <!-- 통계 -->
+                    <RowDefinition Height="Auto"/> <!-- 버튼 -->
+                </Grid.RowDefinitions>
+
+                <!-- 제목 & 닫기 -->
+                <Grid Grid.Row="0" Margin="0,0,0,15">
+                    <TextBlock Text="📈 경험치 측정기" Foreground="#00FF00" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <Button Content="✕" 
+                            HorizontalAlignment="Right"
+                            Width="25" Height="25"
+                            Background="Transparent"
+                            Foreground="#AAAAAA"
+                            BorderThickness="0"
+                            FontWeight="Bold"
+                            Click="CloseExpButton_Click"
+                            Cursor="Hand"/>
+                </Grid>
+
+                <!-- 상태 표시 -->
+                <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                    <TextBlock Text="[OCR 인식 결과]" Foreground="#666666" FontSize="10"/>
+                    <TextBlock x:Name="TxtDebugOcr" Text="-" Foreground="#FF00FF" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="시작 경험치" Foreground="#888888" FontSize="11"/>
+                            <TextBlock x:Name="TxtStartExp" Text="-" Foreground="White" FontSize="12"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="현재 경험치" Foreground="#888888" FontSize="11"/>
+                            <TextBlock x:Name="TxtCurrentExp" Text="-" Foreground="White" FontSize="12"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <!-- [추가] 시작 시간 표시 -->
+                    <TextBlock Text="시작 시간" Foreground="#888888" FontSize="12" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="TxtStartTime" Text="-" Foreground="#AAAAAA" FontSize="14"/>
+
+                    <TextBlock Text="경과 시간" Foreground="#888888" FontSize="12" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="TxtElapsedTime" Text="00:00:00" Foreground="#FFFF00" FontSize="14"/>
+                </StackPanel>
+
+                <!-- 수동 입력 -->
+                <Border Grid.Row="2" Background="#33FFFFFF" CornerRadius="5" Padding="5" Margin="0,0,0,15">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="InputExpValue" Grid.Column="0" Height="22" Margin="0,0,5,0" Background="Transparent" Foreground="White" BorderThickness="0" CaretBrush="White" Text="경험치량"/>
+                        <TextBox x:Name="InputExpPercent" Grid.Column="1" Height="22" Margin="0,0,5,0" Background="Transparent" Foreground="White" BorderThickness="0" CaretBrush="White" Text="%"/>
+                        
+                        <!-- [수정] 버튼 텍스트 변경 -->
+                        <Button Grid.Column="2" Content="수동 시작" Width="60" Height="22" Margin="0,0,2,0" Background="#444444" Foreground="White" BorderThickness="0" Click="BtnManualStart_Click" Cursor="Hand" FontSize="11"/>
+                        <Button Grid.Column="3" Content="수동 갱신" Width="60" Height="22" Background="#006600" Foreground="White" BorderThickness="0" Click="BtnManualUpdate_Click" Cursor="Hand" FontSize="11"/>
+                    </Grid>
+                </Border>
+
+                <!-- 통계 -->
+                <Border Grid.Row="3" Background="#33000000" CornerRadius="5" Padding="10" Margin="0,0,0,15">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,5">
+                            <TextBlock Text="획득 경험치" Foreground="#AAAAAA"/>
+                            <TextBlock x:Name="TxtGainedExp" Text="0 (0.00%)" Foreground="#00FF00" HorizontalAlignment="Right" FontWeight="Bold"/>
+                        </Grid>
+                        <Grid>
+                            <TextBlock Text="시간당 획득" Foreground="#AAAAAA"/>
+                            <TextBlock x:Name="TxtExpPerHour" Text="0 / hr" Foreground="#00CCFF" HorizontalAlignment="Right" FontWeight="Bold"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 버튼 -->
+                <Grid Grid.Row="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <Button Grid.Column="0" 
+                            Content="시작 (캡처)" 
+                            Height="35" 
+                            Background="#444444" 
+                            Foreground="White" 
+                            BorderThickness="0"
+                            Click="BtnStartExp_Click"
+                            Cursor="Hand"/>
+                    
+                    <Button Grid.Column="1" Grid.ColumnSpan="2"
+                            Content="갱신 (캡처)" 
+                            Height="35" 
+                            Background="#006600" 
+                            Foreground="White" 
+                            BorderThickness="0"
+                            Click="BtnUpdateExp_Click"
+                            Cursor="Hand"
+                            Margin="10,0,0,0"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 3. 모드 선택 메뉴 -->
+        <Border x:Name="ModeSelectionPanel"
+                Width="220"
+                Background="#EE111111"
+                CornerRadius="10"
+                BorderBrush="#555555"
+                BorderThickness="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Visibility="Collapsed">
+            <StackPanel Margin="15">
+                <TextBlock Text="기능 선택" Foreground="#DDDDDD" HorizontalAlignment="Center" Margin="0,0,0,15" FontSize="16" FontWeight="Bold"/>
+                
+                <Button Content="📸 아이템 검색" 
+                        Height="40" 
+                        Margin="0,0,0,10" 
+                        Click="ModeCapture_Click" 
+                        Background="#333333" 
+                        Foreground="White" 
+                        FontSize="14"
+                        BorderThickness="0"
+                        Cursor="Hand"/>
+                
+                <Button Content="📈 경험치 측정" 
+                        Height="40" 
+                        Margin="0,0,0,10" 
+                        Click="ModeExp_Click" 
+                        Background="#333333" 
+                        Foreground="White" 
+                        FontSize="14"
+                        BorderThickness="0"
+                        Cursor="Hand"/>
+                
+                <Button Content="⌨ 수동 검색" 
+                        Height="40" 
+                        Click="ModeManual_Click" 
+                        Background="#333333" 
+                        Foreground="White" 
+                        FontSize="14"
+                        BorderThickness="0"
+                        Cursor="Hand"/>
+                
+                <TextBlock Text="(단축키: `)" Foreground="#666666" HorizontalAlignment="Center" Margin="0,15,0,0" FontSize="11"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 4. 캡처 모드용 오버레이 -->
         <Canvas x:Name="CaptureCanvas" 
                 Background="#01000000" 
                 Visibility="Collapsed"
                 MouseDown="CaptureCanvas_MouseDown"
                 MouseMove="CaptureCanvas_MouseMove"
                 MouseUp="CaptureCanvas_MouseUp">
+            
+            <Border Background="#88000000" CornerRadius="5" Canvas.Left="10" Canvas.Top="10" Padding="10">
+                <TextBlock Text="캡처 모드 (ESC: 취소)" Foreground="White" FontSize="16" FontWeight="Bold"/>
+            </Border>
+
             <Rectangle x:Name="SelectionRect" Stroke="#00FF00" StrokeThickness="2" Fill="#3300FF00" Visibility="Collapsed"/>
         </Canvas>
     </Grid>

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -48,7 +49,6 @@ namespace MapleOverlay
         private ConfigManager _configManager;
         
         private bool _isSearchKeyDown = false;
-        private bool _isManualSearchKeyDown = false;
         private bool _isExitKeyDown = false;
 
         private bool _isDragging = false;
@@ -57,20 +57,77 @@ namespace MapleOverlay
 
         private Bitmap _frozenScreenBitmap;
 
+        private TranslateTransform _infoPanelTransform = new TranslateTransform();
+        private TranslateTransform _expPanelTransform = new TranslateTransform();
+        private System.Windows.Point _panelDragStart;
+        private bool _isPanelDragging = false;
+        private FrameworkElement _draggedPanel = null;
+
+        private enum CaptureMode { Item, ExpStart, ExpEnd }
+        private CaptureMode _currentCaptureMode = CaptureMode.Item;
+
+        private ExpManager _expManager = new ExpManager();
+
         public MainWindow()
         {
             InitializeComponent();
             _ocrManager = new OcrManager();
             _configManager = new ConfigManager();
 
+            InfoPanel.RenderTransform = _infoPanelTransform;
+            ExpPanel.RenderTransform = _expPanelTransform;
+
             UpdateKeyGuide();
 
-            SearchInput.GotFocus += (s, e) => {
-                if (SearchInput.Text == "직접 검색...") SearchInput.Text = "";
-            };
-            SearchInput.LostFocus += (s, e) => {
-                if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색...";
-            };
+            // --- 이벤트 핸들러 ---
+            SearchInput.GotFocus += (s, e) => { if (SearchInput.Text == "직접 검색...") SearchInput.Text = ""; };
+            SearchInput.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색..."; };
+            
+            InputExpValue.GotFocus += (s, e) => { if (InputExpValue.Text == "경험치량") InputExpValue.Text = ""; };
+            InputExpValue.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(InputExpValue.Text)) InputExpValue.Text = "경험치량"; };
+            
+            InputExpPercent.GotFocus += (s, e) => { if (InputExpPercent.Text == "%") InputExpPercent.Text = ""; };
+            InputExpPercent.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(InputExpPercent.Text)) InputExpPercent.Text = "%"; };
+        }
+
+        private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement panel)
+            {
+                _isPanelDragging = true;
+                _draggedPanel = panel;
+                _panelDragStart = e.GetPosition(this);
+                panel.CaptureMouse();
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+
+            if (_isPanelDragging && _draggedPanel != null)
+            {
+                var currentPos = e.GetPosition(this);
+                var diff = currentPos - _panelDragStart;
+                
+                TranslateTransform transform = _draggedPanel == InfoPanel ? _infoPanelTransform : _expPanelTransform;
+                
+                transform.X += diff.X;
+                transform.Y += diff.Y;
+                
+                _panelDragStart = currentPos;
+            }
+        }
+
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+        {
+            base.OnMouseLeftButtonUp(e);
+            if (_isPanelDragging && _draggedPanel != null)
+            {
+                _isPanelDragging = false;
+                _draggedPanel.ReleaseMouseCapture();
+                _draggedPanel = null;
+            }
         }
 
         private void UpdateKeyGuide()
@@ -85,8 +142,7 @@ namespace MapleOverlay
             }
 
             var cfg = _configManager.Config;
-            // [수정] 닫기(ESC) 추가
-            KeyGuideText.Text = $"캡처: {GetKeyName(cfg.KeyCapture)} | 검색: {GetKeyName(cfg.KeyManualSearch)} | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 프로그램 종료: {GetKeyName(cfg.KeyExit)}";
+            KeyGuideText.Text = $"메뉴: {GetKeyName(cfg.KeyCapture)} | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -131,7 +187,7 @@ namespace MapleOverlay
 
             if ((GetAsyncKeyState(cfg.KeyClosePanel) & 0x8000) != 0)
             {
-                CloseInfoPanel();
+                CloseAllPanels();
                 return;
             }
 
@@ -157,7 +213,9 @@ namespace MapleOverlay
                 this.Height = SystemParameters.PrimaryScreenHeight;
             }
 
-            if (_isInfoPanelVisible)
+            bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible;
+            
+            if (isAnyPanelVisible)
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
                 int extendedStyle = GetWindowLong(hwnd, -20);
@@ -180,35 +238,84 @@ namespace MapleOverlay
             if (isCaptureKeyDown && !_isSearchKeyDown)
             {
                 _isSearchKeyDown = true;
-                StartCaptureMode();
+                ToggleModeSelection();
             }
             else if (!isCaptureKeyDown)
             {
                 _isSearchKeyDown = false;
             }
+        }
 
-            bool isManualSearchKeyDown = (GetAsyncKeyState(cfg.KeyManualSearch) & 0x8000) != 0;
-            if (isManualSearchKeyDown && !_isManualSearchKeyDown)
+        private void ToggleModeSelection()
+        {
+            if (ModeSelectionPanel.Visibility == Visibility.Visible)
             {
-                _isManualSearchKeyDown = true;
-                OpenManualSearch();
+                ModeSelectionPanel.Visibility = Visibility.Collapsed;
             }
-            else if (!isManualSearchKeyDown)
+            else
             {
-                _isManualSearchKeyDown = false;
+                CloseAllPanels();
+                ModeSelectionPanel.Visibility = Visibility.Visible;
             }
         }
 
-        private void CloseInfoPanel()
+        private void CloseAllPanels()
         {
             InfoPanel.Visibility = Visibility.Hidden;
             _isInfoPanelVisible = false;
+            ExpPanel.Visibility = Visibility.Hidden;
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
             
             if (CaptureCanvas.Visibility == Visibility.Visible)
             {
                 EndCaptureMode();
             }
             
+            SetClickThrough(true);
+        }
+
+        private void ModeCapture_Click(object sender, RoutedEventArgs e)
+        {
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            _currentCaptureMode = CaptureMode.Item;
+            StartCaptureMode();
+        }
+
+        private void ModeExp_Click(object sender, RoutedEventArgs e)
+        {
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            ExpPanel.Visibility = Visibility.Visible;
+        }
+
+        private void ModeManual_Click(object sender, RoutedEventArgs e)
+        {
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            OpenManualSearch();
+        }
+
+        private void BtnStartExp_Click(object sender, RoutedEventArgs e)
+        {
+            ExpPanel.Visibility = Visibility.Hidden;
+            _currentCaptureMode = CaptureMode.ExpStart;
+            StartCaptureMode();
+        }
+
+        private void BtnUpdateExp_Click(object sender, RoutedEventArgs e)
+        {
+            ExpPanel.Visibility = Visibility.Hidden;
+            _currentCaptureMode = CaptureMode.ExpEnd;
+            StartCaptureMode();
+        }
+
+        private void CloseExpButton_Click(object sender, RoutedEventArgs e)
+        {
+            ExpPanel.Visibility = Visibility.Hidden;
+        }
+
+        private void CloseInfoPanel()
+        {
+            InfoPanel.Visibility = Visibility.Hidden;
+            _isInfoPanelVisible = false;
             SetClickThrough(true);
         }
 
@@ -239,6 +346,8 @@ namespace MapleOverlay
         {
             InfoPanel.Visibility = Visibility.Hidden;
             _isInfoPanelVisible = false;
+            ExpPanel.Visibility = Visibility.Hidden;
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
 
             await Task.Delay(100);
 
@@ -336,19 +445,17 @@ namespace MapleOverlay
 
             if (w > 10 && h > 10)
             {
-                _isInfoPanelVisible = true;
-                
                 GetCursorPos(out POINT pt);
                 _mapleHandle = FindWindow("MapleStoryClass", "MapleStory");
-                double offsetX = 0, offsetY = 0;
                 
-                if (_mapleHandle != IntPtr.Zero && GetWindowRect(_mapleHandle, out RECT rect))
-                {
-                    offsetX = rect.Left;
-                    offsetY = rect.Top;
-                }
-
                 PerformOcrFromFrozenImage((int)x, (int)y, (int)w, (int)h);
+            }
+            else
+            {
+                if (_currentCaptureMode == CaptureMode.ExpStart || _currentCaptureMode == CaptureMode.ExpEnd)
+                {
+                    ExpPanel.Visibility = Visibility.Visible;
+                }
             }
         }
 
@@ -365,39 +472,175 @@ namespace MapleOverlay
 
                 using (Bitmap cropped = _frozenScreenBitmap.Clone(cropRect, _frozenScreenBitmap.PixelFormat))
                 {
-                    try {
-                        string debugPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_drag.png");
-                        cropped.Save(debugPath, System.Drawing.Imaging.ImageFormat.Png);
-                    } catch { }
-
                     string text = _ocrManager.RecognizeText(cropped);
                     
-                    InfoPanel.Visibility = Visibility.Visible;
-                    ItemNameText.Text = $"인식됨: [{text}]";
-                    ItemReqText.Visibility = Visibility.Collapsed;
-                    ReqSeparator.Visibility = Visibility.Collapsed;
-                    ItemStatsText.Text = "";
-                    ItemDescText.Text = "API 검색 대기 중...";
-                    DescSeparator.Visibility = Visibility.Collapsed;
-                    
-                    SearchInput.Text = text ?? "";
-
-                    if (!string.IsNullOrWhiteSpace(text))
+                    if (_currentCaptureMode == CaptureMode.Item)
                     {
-                        SearchItem(text);
+                        ProcessItemOcr(text);
                     }
-                    else
+                    else if (_currentCaptureMode == CaptureMode.ExpStart)
                     {
-                        ItemNameText.Text = "인식 실패";
-                        ItemDescText.Text = "글자를 읽지 못했습니다. 아래 검색창을 이용하세요.";
+                        ProcessExpOcr(text, true);
+                    }
+                    else if (_currentCaptureMode == CaptureMode.ExpEnd)
+                    {
+                        ProcessExpOcr(text, false);
                     }
                 }
             }
             catch (Exception ex)
             {
-                ItemDescText.Text = $"캡처 오류: {ex.Message}";
-                InfoPanel.Visibility = Visibility.Visible;
+                if (_currentCaptureMode == CaptureMode.Item)
+                {
+                    ItemDescText.Text = $"캡처 오류: {ex.Message}";
+                    InfoPanel.Visibility = Visibility.Visible;
+                    _isInfoPanelVisible = true;
+                }
+                else
+                {
+                    ExpPanel.Visibility = Visibility.Visible;
+                }
             }
+        }
+
+        private void ProcessItemOcr(string text)
+        {
+            InfoPanel.Visibility = Visibility.Visible;
+            _isInfoPanelVisible = true;
+            
+            ItemNameText.Text = $"인식됨: [{text}]";
+            ItemReqText.Visibility = Visibility.Collapsed;
+            ReqSeparator.Visibility = Visibility.Collapsed;
+            ItemStatsText.Text = "";
+            ItemDescText.Text = "API 검색 대기 중...";
+            DescSeparator.Visibility = Visibility.Collapsed;
+            
+            SearchInput.Text = text ?? "";
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                SearchItem(text);
+            }
+            else
+            {
+                ItemNameText.Text = "인식 실패";
+                ItemDescText.Text = "글자를 읽지 못했습니다. 아래 검색창을 이용하세요.";
+            }
+        }
+
+        private void ProcessExpOcr(string text, bool isStart)
+        {
+            ExpPanel.Visibility = Visibility.Visible;
+            TxtDebugOcr.Text = string.IsNullOrWhiteSpace(text) ? "(인식 실패)" : text;
+
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            long expValue = ParseExpValue(text);
+            double expPercent = ParseExpPercent(text);
+
+            if (expValue < 0) return;
+
+            UpdateExpPanel(expValue, expPercent, isStart);
+        }
+
+        // [추가] 수동 시작 버튼 핸들러
+        private void BtnManualStart_Click(object sender, RoutedEventArgs e)
+        {
+            long expValue = ParseExpValue(InputExpValue.Text);
+            double expPercent = ParseExpPercent(InputExpPercent.Text);
+
+            if (expValue < 0) return;
+
+            UpdateExpPanel(expValue, expPercent, true);
+        }
+
+        // [추가] 수동 갱신 버튼 핸들러
+        private void BtnManualUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            long expValue = ParseExpValue(InputExpValue.Text);
+            double expPercent = ParseExpPercent(InputExpPercent.Text);
+
+            if (expValue < 0) return;
+
+            UpdateExpPanel(expValue, expPercent, false);
+        }
+
+        private void UpdateExpPanel(long expValue, double expPercent, bool isStart)
+        {
+            if (isStart)
+            {
+                _expManager.Start(expValue, expPercent);
+                TxtStartExp.Text = $"{expValue:N0} ({expPercent:F2}%)";
+                TxtCurrentExp.Text = "-";
+                TxtStartTime.Text =_expManager.StartTime.ToString(@"hh\:mm\:ss");
+                TxtElapsedTime.Text = "00:00:00";
+                TxtGainedExp.Text = "0 (0.00%)";
+                TxtExpPerHour.Text = "0 / hr";
+            }
+            else
+            {
+                _expManager.Update(expValue, expPercent);
+                TxtCurrentExp.Text = $"{expValue:N0} ({expPercent:F2}%)";
+                
+                var stats = _expManager.GetStats();
+                TxtElapsedTime.Text = stats.Elapsed.ToString(@"hh\:mm\:ss");
+                TxtGainedExp.Text = $"{stats.GainedExp:N0} ({stats.GainedPercent:F2}%)";
+                TxtExpPerHour.Text = $"{stats.ExpPerHour:N0} / hr";
+            }
+        }
+
+        private long ParseExpValue(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return -1;
+            try
+            {
+                // [수정] 정규식으로 "숫자 + 괄호" 패턴 찾기
+                // 예: 12345[12.34%] 또는 12345(12.34%)
+                // 앞뒤에 붙은 쓰레기 값(1 등)을 무시하기 위해 패턴 매칭 사용
+                var match = Regex.Match(text, @"(\d+)[\(\[]");
+                if (match.Success)
+                {
+                    string numStr = match.Groups[1].Value;
+                    if (long.TryParse(numStr, out long result))
+                    {
+                        return result;
+                    }
+                }
+                
+                // 패턴 매칭 실패 시 기존 방식 시도 (숫자만 추출)
+                // 하지만 이 경우 앞에 붙은 '1'도 포함될 위험이 있음.
+                // 일단 패턴 매칭 실패하면 실패로 처리하는 게 안전할 수 있음.
+                // 여기서는 기존 로직 유지하되, 패턴 매칭을 우선함.
+                
+                string numPart = text.Split('(', '[')[0];
+                string cleanNum = Regex.Replace(numPart, @"[^0-9]", "");
+                if (long.TryParse(cleanNum, out long expValue))
+                {
+                    return expValue;
+                }
+            }
+            catch { }
+            return -1;
+        }
+
+        private double ParseExpPercent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return 0.0;
+            try
+            {
+                // [수정] 정규식으로 괄호 안의 숫자+점+숫자 패턴 찾기
+                var match = Regex.Match(text, @"[\(\[]\s*([\d\.]+)\s*%?[\)\]]");
+                if (match.Success)
+                {
+                    string percentStr = match.Groups[1].Value;
+                    if (double.TryParse(percentStr, out double result))
+                    {
+                        return result;
+                    }
+                }
+            }
+            catch { }
+            return 0.0;
         }
 
         private void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -427,7 +670,7 @@ namespace MapleOverlay
 
             try
             {
-                string cleanName = System.Text.RegularExpressions.Regex.Replace(itemName, @"[^a-zA-Z0-9가-힣\s]", "").Trim();
+                string cleanName = Regex.Replace(itemName, @"[^a-zA-Z0-9가-힣\s]", "").Trim();
 
                 if (string.IsNullOrWhiteSpace(cleanName))
                 {
@@ -595,6 +838,53 @@ namespace MapleOverlay
             if (!string.IsNullOrEmpty(val) && val != "0")
             {
                 sb.AppendLine($"{label} : +{val}");
+            }
+        }
+
+        public class ExpManager
+        {
+            public long StartExp { get; private set; }
+            public double StartPercent { get; private set; }
+            public DateTime StartTime { get; private set; }
+
+            public long CurrentExp { get; private set; }
+            public double CurrentPercent { get; private set; }
+            public DateTime LastUpdateTime { get; private set; }
+
+            public void Start(long exp, double percent)
+            {
+                StartExp = exp;
+                StartPercent = percent;
+                StartTime = DateTime.Now;
+                
+                CurrentExp = exp;
+                CurrentPercent = percent;
+                LastUpdateTime = DateTime.Now;
+            }
+
+            public void Update(long exp, double percent)
+            {
+                CurrentExp = exp;
+                CurrentPercent = percent;
+                LastUpdateTime = DateTime.Now;
+            }
+
+            public (TimeSpan Elapsed, long GainedExp, double GainedPercent, long ExpPerHour) GetStats()
+            {
+                var elapsed = LastUpdateTime - StartTime;
+                long gainedExp = CurrentExp - StartExp;
+                double gainedPercent = CurrentPercent - StartPercent;
+
+                if (gainedExp < 0) gainedExp = 0; 
+                if (gainedPercent < 0) gainedPercent = 0;
+
+                long expPerHour = 0;
+                if (elapsed.TotalHours > 0)
+                {
+                    expPerHour = (long)(gainedExp / elapsed.TotalHours);
+                }
+
+                return (elapsed, gainedExp, gainedPercent, expPerHour);
             }
         }
     }
