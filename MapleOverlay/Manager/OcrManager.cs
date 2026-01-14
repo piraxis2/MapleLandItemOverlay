@@ -32,6 +32,7 @@ namespace MapleOverlay.Manager
                 if (!Directory.Exists(dataPath))
                 {
                     Log("[Error] tessdata folder NOT found!");
+                    // 개발 환경 등 상위 폴더 체크
                     string upPath = Path.Combine(basePath, "..", "tessdata");
                     if (Directory.Exists(upPath))
                     {
@@ -53,6 +54,7 @@ namespace MapleOverlay.Manager
                     }
                 }
 
+                // Costura.Fody 사용 시 일반적인 초기화로 충분함
                 _engine = new TesseractEngine(dataPath, language, EngineMode.LstmOnly);
                 Log("[Init] Engine initialized successfully.");
             }
@@ -60,6 +62,10 @@ namespace MapleOverlay.Manager
             {
                 Log($"[Error] Engine Init Failed: {ex.Message}");
                 Log($"[Error] StackTrace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Log($"[Error] InnerException: {ex.InnerException.Message}");
+                }
             }
         }
 
@@ -182,7 +188,6 @@ namespace MapleOverlay.Manager
             Bitmap sharpened = ApplySharpen(padded);
             padded.Dispose();
 
-            // [수정] sharpened 변수를 사용하여 LockBits 호출
             BitmapData data = sharpened.LockBits(new Rectangle(0, 0, sharpened.Width, sharpened.Height), 
                                               ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
 

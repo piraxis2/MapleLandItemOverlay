@@ -1,0 +1,12 @@
+﻿<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <Costura>
+    <Unmanaged32Assemblies>
+      leptonica-1.82.0
+      tesseract50
+    </Unmanaged32Assemblies>
+    <Unmanaged64Assemblies>
+      leptonica-1.82.0
+      tesseract50
+    </Unmanaged64Assemblies>
+  </Costura>
+</Weavers>

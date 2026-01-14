@@ -7,7 +7,7 @@
         AllowsTransparency="True" 
         WindowStyle="None"
         Topmost="True" 
-        ShowInTaskbar="False">
+        ShowInTaskbar="True">
     
     <Grid>
         <!-- 1. 정보 패널 (중앙) -->

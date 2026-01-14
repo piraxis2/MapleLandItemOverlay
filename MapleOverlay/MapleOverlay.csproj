@@ -6,12 +6,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
-        
-        <!-- 단일 파일 배포 끄기 (안정성 최우선) -->
-        <PublishSingleFile>false</PublishSingleFile>
-        <SelfContained>true</SelfContained>
-        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <PlatformTarget>x64</PlatformTarget>
     </PropertyGroup>
 
     <ItemGroup>
@@ -26,33 +21,40 @@
         <Content Include="tessdata\**">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
         </Content>
     </ItemGroup>
 
-    <!-- [추가] config.json 복사 -->
+    <!-- config.json 복사 -->
     <ItemGroup>
         <Content Include="config.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
         </Content>
     </ItemGroup>
 
-    <!-- Tesseract 네이티브 DLL (x64) 강제 복사 -->
-    <Target Name="CopyNativeLibsToPublish" AfterTargets="Publish">
+    <!-- [핵심] Publish 후 파일 정리 (DLL -> lib 폴더 이동) -->
+    <Target Name="MoveDllsToLib" AfterTargets="Publish">
+        <!-- 1. lib 폴더 생성 -->
+        <MakeDir Directories="$(PublishDir)lib" />
+
+        <!-- 2. 루트에 있는 .dll 파일들을 찾음 (단, 실행 파일과 관련된 MapleOverlay.dll 등은 제외해야 할 수도 있음) -->
+        <!-- 여기서는 모든 .dll을 옮기되, 실행에 필수적인 런타임 파일이 섞여 있을 수 있으므로 주의해야 함. -->
+        <!-- 안전하게: NuGet 패키지로 들어온 주요 DLL들만 명시적으로 옮기거나, 
+             패턴 매칭으로 옮기되 런타임 호스트(hostfxr 등)는 건드리지 않도록 함. -->
+        
+        <ItemGroup>
+            <DllsToMove Include="$(PublishDir)*.dll" Exclude="$(PublishDir)MapleOverlay.dll" />
+        </ItemGroup>
+
+        <!-- 3. 파일 이동 -->
+        <Move SourceFiles="@(DllsToMove)" DestinationFolder="$(PublishDir)lib" />
+        
+        <!-- 4. x64 폴더 (네이티브 DLL) 복사 -->
         <ItemGroup>
             <NativeLibs Include="$(OutDir)x64\**" />
         </ItemGroup>
         <Copy SourceFiles="@(NativeLibs)" 
-              DestinationFolder="$(PublishDir)\x64\%(RecursiveDir)" 
-              SkipUnchangedFiles="true" />
-        
-        <ItemGroup>
-            <TessDataFiles Include="tessdata\**" />
-        </ItemGroup>
-        <Copy SourceFiles="@(TessDataFiles)" 
-              DestinationFolder="$(PublishDir)\tessdata\%(RecursiveDir)" 
+              DestinationFolder="$(PublishDir)\x64\%(RecursiveDir)"
               SkipUnchangedFiles="true" />
     </Target>
 
