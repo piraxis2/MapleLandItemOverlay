@@ -29,6 +29,8 @@ KMS는 100 이하의 버전을 검색할 수 없어서 KMS 389 버전에서 이�
 
 `config.json` 파일을 열어서 단축키 코드를 수정할 수 있음.
 
+키 코드는 [Virtual-Key Codes](https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)를 참고
+
 ```json
 {
   "KeyCapture": 192,      // `
