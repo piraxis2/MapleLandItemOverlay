@@ -9,12 +9,17 @@
 *.userosscache
 *.sln.docstates
 
+# JetBrains IDE files
+.idea/
+*.sln.iml
+
 # Tesseract data (용량이 크므로 제외하거나, 필요시 포함)
 # tessdata/
 
 # Debug files
 debug_*.png
 debug_*.json
+ocr_log.txt
 
 # OS generated files
 Thumbs.db
