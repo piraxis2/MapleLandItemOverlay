@@ -1,22 +1,21 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using MapleOverlay.Manager;
 using Newtonsoft.Json.Linq;
+using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Windows.Media.Imaging;
+using System.Linq;
+using System.Text;
 
 namespace MapleOverlay
 {
@@ -27,37 +26,35 @@ namespace MapleOverlay
         [DllImport("user32.dll")]
         static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32.dll")]
-        static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        static extern bool GetWindowRect(IntPtr hWnd, out Rect lpRect);
         [DllImport("user32.dll")]
         static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-        [DllImport("user32.dll")]
-        static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("user32.dll")]
         static extern short GetAsyncKeyState(int vKey);
         [DllImport("gdi32.dll")]
         public static extern bool DeleteObject(IntPtr hObject);
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct RECT { public int Left, Top, Right, Bottom; }
+        public struct Rect { public int Left, Top, Right, Bottom; }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct POINT { public int X; public int Y; }
+        public struct Point { public int X; public int Y; }
 
-        private DispatcherTimer _trackingTimer;
+        private DispatcherTimer? _trackingTimer;
         private IntPtr _mapleHandle;
         private MapleApiManager _apiManager = new MapleApiManager();
         private OcrManager _ocrManager;
         private ConfigManager _configManager;
         
-        private bool _isSearchKeyDown = false;
-        private bool _isExitKeyDown = false;
-        private bool _isCaptureKeyDown = false;
+        private bool _isSearchKeyDown;
+        private bool _isExitKeyDown;
+        private bool _isCaptureKeyDown;
 
-        private bool _isDragging = false;
+        private bool _isDragging;
         private System.Windows.Point _startPoint;
-        private bool _isInfoPanelVisible = false;
+        private bool _isInfoPanelVisible;
 
-        private Bitmap _frozenScreenBitmap;
+        private Bitmap? _frozenScreenBitmap;
 
         private TranslateTransform _infoPanelTransform = new TranslateTransform();
         private TranslateTransform _expPanelTransform = new TranslateTransform();
@@ -65,25 +62,25 @@ namespace MapleOverlay
         private TranslateTransform _minimizedExpPanelTransform = new TranslateTransform();
         private TranslateTransform _minimizedRealTimePanelTransform = new TranslateTransform();
         private System.Windows.Point _panelDragStart;
-        private bool _isPanelDragging = false;
-        private FrameworkElement _draggedPanel = null;
+        private bool _isPanelDragging;
+        private FrameworkElement? _draggedPanel;
 
-        private enum CaptureMode { Item, ExpUI }
-        private CaptureMode _currentCaptureMode = CaptureMode.Item;
+        private enum CaptureMode { Item, ExpUi }
+        private CaptureMode _currentCaptureMode;
 
         private ExpManager _expManager = new ExpManager();
-        private ExpManager _realTimeExpManager = new ExpManager();
+        private ExpManager _realTimeExpManager;
 
         // 실시간 트래커용 변수
         private DispatcherTimer _realTimeTrackingTimer;
         private System.Drawing.Rectangle _expSnapshotRect; // 공용 경험치 UI 영역
-        private bool _isRealTimeTracking = false;
-        private bool _isRealTimePaused = false;
+        private bool _isRealTimeTracking;
+        private bool _isRealTimePaused;
 
         // 경험치 타이머용 변수
-        private DispatcherTimer _expTimer;
+        private DispatcherTimer? _expTimer;
         private TimeSpan _expTimerRemaining;
-        private bool _isExpTimerRunning = false;
+        private bool _isExpTimerRunning;
         private DateTime _expTimerStartTime;
 
         public MainWindow()
@@ -91,6 +88,7 @@ namespace MapleOverlay
             InitializeComponent();
             _ocrManager = new OcrManager();
             _configManager = new ConfigManager();
+            _realTimeExpManager = new ExpManager();
 
             InfoPanel.RenderTransform = _infoPanelTransform;
             ExpPanel.RenderTransform = _expPanelTransform;
@@ -111,8 +109,8 @@ namespace MapleOverlay
             _expTimer.Tick += ExpTimer_Tick;
 
             // --- 이벤트 핸들러 ---
-            SearchInput.GotFocus += (s, e) => { if (SearchInput.Text == "직접 검색...") SearchInput.Text = ""; };
-            SearchInput.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색..."; };
+            SearchInput.GotFocus += (_, _) => { if (SearchInput.Text == "직접 검색...") SearchInput.Text = ""; };
+            SearchInput.LostFocus += (_, _) => { if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색..."; };
         }
 
         private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -202,7 +200,7 @@ namespace MapleOverlay
                 SetWindowLong(hwnd, -20, (extendedStyle | 0x80000) & ~0x20);
         }
 
-        private void TrackingTimer_Tick(object sender, EventArgs e)
+        private void TrackingTimer_Tick(object? _, EventArgs __)
         {
             var cfg = _configManager.Config;
 
@@ -232,7 +230,7 @@ namespace MapleOverlay
             
             if (_mapleHandle != IntPtr.Zero)
             {
-                if (GetWindowRect(_mapleHandle, out RECT rect))
+                if (GetWindowRect(_mapleHandle, out Rect rect))
                 {
                     this.Left = rect.Left;
                     this.Top = rect.Top;
@@ -331,14 +329,14 @@ namespace MapleOverlay
             SetClickThrough(true);
         }
 
-        private void ModeCaptureExpUI_Click(object sender, RoutedEventArgs e)
+        private void ModeCaptureExpUI_Click(object _, RoutedEventArgs __)
         {
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
-            _currentCaptureMode = CaptureMode.ExpUI;
+            _currentCaptureMode = CaptureMode.ExpUi;
             StartCaptureMode();
         }
 
-        private void ModeExp_Click(object sender, RoutedEventArgs e)
+        private void ModeExp_Click(object _, RoutedEventArgs __)
         {
             if (_expSnapshotRect.IsEmpty)
             {
@@ -350,7 +348,7 @@ namespace MapleOverlay
             MinimizedExpPanel.Visibility = Visibility.Hidden;
         }
 
-        private void ModeRealTimeExp_Click(object sender, RoutedEventArgs e)
+        private void ModeRealTimeExp_Click(object _, RoutedEventArgs __)
         {
             if (_expSnapshotRect.IsEmpty)
             {
@@ -370,14 +368,14 @@ namespace MapleOverlay
             PerformRealTimeUpdate(true);
         }
 
-        private void ModeManual_Click(object sender, RoutedEventArgs e)
+        private void ModeManual_Click(object _, RoutedEventArgs __)
         {
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
             InfoPanel.Visibility = Visibility.Visible;
             OpenManualSearch();
         }
 
-        private void BtnUpdateExp_Click(object sender, RoutedEventArgs e)
+        private void BtnUpdateExp_Click(object _, RoutedEventArgs __)
         {
             PerformExpUpdate();
         }
@@ -401,6 +399,7 @@ namespace MapleOverlay
                 }
                 catch
                 {
+                    // OCR 또는 화면 캡처 오류 시 사용자에게 알림
                     MessageBox.Show("경험치 UI를 읽는 중 오류가 발생했습니다.", "오류");
                 }
             }
@@ -425,33 +424,33 @@ namespace MapleOverlay
                 }
                 catch
                 {
-                    // 실시간 모드에서는 오류 메시지를 띄우지 않음
+                    // 실시간 모드에서는 오류 메시지를 띄우지 않음 (사용자 경험 방해 최소화)
                 }
             }
         }
 
-        private void CloseExpButton_Click(object sender, RoutedEventArgs e)
+        private void CloseExpButton_Click(object _, RoutedEventArgs __)
         {
             ExpPanel.Visibility = Visibility.Hidden;
             MinimizedExpPanel.Visibility = Visibility.Hidden;
             StopExpTimer();
         }
 
-        private void CloseRealTimeExpButton_Click(object sender, RoutedEventArgs e)
+        private void CloseRealTimeExpButton_Click(object _, RoutedEventArgs __)
         {
             RealTimeExpPanel.Visibility = Visibility.Hidden;
             MinimizedRealTimePanel.Visibility = Visibility.Hidden;
             StopRealTimeTracking();
         }
 
-        private void BtnStopRealTimeTracking_Click(object sender, RoutedEventArgs e)
+        private void BtnStopRealTimeTracking_Click(object _, RoutedEventArgs __)
         {
             StopRealTimeTracking();
             RealTimeExpPanel.Visibility = Visibility.Hidden;
             MinimizedRealTimePanel.Visibility = Visibility.Hidden;
         }
 
-        private void BtnPauseResumeRealTime_Click(object sender, RoutedEventArgs e)
+        private void BtnPauseResumeRealTime_Click(object _, RoutedEventArgs __)
         {
             if (_isRealTimePaused)
             {
@@ -469,7 +468,7 @@ namespace MapleOverlay
             }
         }
 
-        private void BtnRestartRealTime_Click(object sender, RoutedEventArgs e)
+        private void BtnRestartRealTime_Click(object _, RoutedEventArgs __)
         {
             _isRealTimePaused = false;
             BtnPauseResumeRealTime.Content = "일시정지";
@@ -507,7 +506,7 @@ namespace MapleOverlay
             SetClickThrough(false);
         }
 
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        private void CloseButton_Click(object _, RoutedEventArgs __)
         {
             CloseInfoPanel();
         }
@@ -527,7 +526,6 @@ namespace MapleOverlay
             if (_frozenScreenBitmap != null)
             {
                 _frozenScreenBitmap.Dispose();
-                _frozenScreenBitmap = null;
             }
 
             _frozenScreenBitmap = new Bitmap(screenWidth, screenHeight);
@@ -546,7 +544,7 @@ namespace MapleOverlay
 
             string modeText = "모드: -";
             if (_currentCaptureMode == CaptureMode.Item) modeText = "모드: 아이템 검색";
-            else if (_currentCaptureMode == CaptureMode.ExpUI) modeText = "모드: 경험치 UI 캡처";
+            else if (_currentCaptureMode == CaptureMode.ExpUi) modeText = "모드: 경험치 UI 캡처";
             
             CaptureModeText.Text = modeText;
 
@@ -578,7 +576,7 @@ namespace MapleOverlay
             }
         }
 
-        private void CaptureCanvas_MouseDown(object sender, MouseButtonEventArgs e)
+        private void CaptureCanvas_MouseDown(object _, MouseButtonEventArgs e)
         {
             _isDragging = true;
             _startPoint = e.GetPosition(CaptureCanvas);
@@ -590,7 +588,7 @@ namespace MapleOverlay
             Canvas.SetTop(SelectionRect, _startPoint.Y);
         }
 
-        private void CaptureCanvas_MouseMove(object sender, MouseEventArgs e)
+        private void CaptureCanvas_MouseMove(object _, MouseEventArgs e)
         {
             if (!_isDragging) return;
 
@@ -607,7 +605,7 @@ namespace MapleOverlay
             SelectionRect.Height = h;
         }
 
-        private void CaptureCanvas_MouseUp(object sender, MouseButtonEventArgs e)
+        private void CaptureCanvas_MouseUp(object _, MouseButtonEventArgs __)
         {
             if (!_isDragging) return;
             _isDragging = false;
@@ -627,7 +625,7 @@ namespace MapleOverlay
                 {
                     PerformOcrFromFrozenImage(cropRect);
                 }
-                else if (_currentCaptureMode == CaptureMode.ExpUI)
+                else if (_currentCaptureMode == CaptureMode.ExpUi)
                 {
                     _expSnapshotRect = cropRect;
                     MessageBox.Show("경험치 UI 영역이 저장되었습니다.", "알림");
@@ -658,7 +656,7 @@ namespace MapleOverlay
             }
         }
 
-        private void RealTimeTrackingTimer_Tick(object sender, EventArgs e)
+        private void RealTimeTrackingTimer_Tick(object? _, EventArgs __)
         {
             if (!_isRealTimeTracking || _expSnapshotRect.IsEmpty || _isRealTimePaused) return;
 
@@ -817,11 +815,14 @@ namespace MapleOverlay
                     if (long.TryParse(clean, out long result)) return result;
                 }
             }
-            catch { }
+            catch
+            {
+                // 값 파싱 중 오류가 발생해도 프로그램을 중단하지 않음
+            }
             return -1;
         }
 
-        private void SearchButton_Click(object sender, RoutedEventArgs e)
+        private void SearchButton_Click(object _, RoutedEventArgs __)
         {
             string text = SearchInput.Text;
             if (text != "직접 검색..." && !string.IsNullOrWhiteSpace(text))
@@ -830,7 +831,7 @@ namespace MapleOverlay
             }
         }
 
-        private void SearchInput_KeyDown(object sender, KeyEventArgs e)
+        private void SearchInput_KeyDown(object _, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
@@ -862,7 +863,7 @@ namespace MapleOverlay
                 
                 if (results != null && results.Count > 0)
                 {
-                    var bestMatch = results.Cast<JToken>()
+                    var bestMatch = results
                         .FirstOrDefault(item => item["name"]?.ToString() == cleanName);
 
                     if (bestMatch == null)
@@ -883,16 +884,16 @@ namespace MapleOverlay
                         
                         if (detail != null)
                         {
-                            UpdateItemUI(detail, kmsName, kmsDesc);
+                            UpdateItemUi(detail, kmsName, kmsDesc);
                         }
                         else
                         {
-                            UpdateItemUI(bestMatch, kmsName, kmsDesc);
+                            UpdateItemUi(bestMatch, kmsName, kmsDesc);
                         }
                     }
                     else
                     {
-                        UpdateItemUI(bestMatch, kmsName, kmsDesc);
+                        UpdateItemUi(bestMatch, kmsName, kmsDesc);
                     }
                 }
                 else
@@ -906,9 +907,9 @@ namespace MapleOverlay
             }
         }
 
-        private void UpdateItemUI(JToken item, string forcedName = null, string forcedDesc = null)
+        private void UpdateItemUi(JToken item, string? forcedName = null, string? forcedDesc = null)
         {
-            string name = forcedName;
+            string? name = forcedName;
             if (string.IsNullOrEmpty(name))
             {
                 name = item["name"]?.ToString();
@@ -946,7 +947,7 @@ namespace MapleOverlay
                 DescSeparator.Visibility = Visibility.Collapsed;
             }
 
-            string desc = forcedDesc;
+            string? desc = forcedDesc;
             if (string.IsNullOrEmpty(desc))
             {
                 desc = item["description"]?.ToString();
@@ -1021,7 +1022,7 @@ namespace MapleOverlay
 
         // --- 경험치 타이머 관련 로직 ---
 
-        private void BtnToggleTimer_Click(object sender, RoutedEventArgs e)
+        private void BtnToggleTimer_Click(object _, RoutedEventArgs __)
         {
             if (_isExpTimerRunning)
             {
@@ -1059,20 +1060,20 @@ namespace MapleOverlay
             
             PerformExpUpdate(true); // isStart = true
 
-            _expTimer.Start();
+            _expTimer?.Start();
         }
 
         private void StopExpTimer()
         {
             _isExpTimerRunning = false;
-            _expTimer.Stop();
+            _expTimer?.Stop();
             
             BtnToggleTimer.Content = "타이머 시작";
             BtnToggleTimer.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#006600"));
             TxtTimerCountdown.Text = "00:00";
         }
 
-        private void ExpTimer_Tick(object sender, EventArgs e)
+        private void ExpTimer_Tick(object? _, EventArgs __)
         {
             _expTimerRemaining = _expTimerRemaining.Add(TimeSpan.FromSeconds(-1));
             
@@ -1100,7 +1101,7 @@ namespace MapleOverlay
 
         // --- 최소화/복원 로직 ---
 
-        private void BtnMinimizeExp_Click(object sender, RoutedEventArgs e)
+        private void BtnMinimizeExp_Click(object _, RoutedEventArgs __)
         {
             _minimizedExpPanelTransform.X = _expPanelTransform.X;
             _minimizedExpPanelTransform.Y = _expPanelTransform.Y;
@@ -1110,7 +1111,7 @@ namespace MapleOverlay
             TxtMinimizedExpStatus.Text = _isExpTimerRunning ? $"타이머: {_expTimerRemaining:mm\\:ss}" : "타이머 대기 중";
         }
 
-        private void BtnRestoreExp_Click(object sender, RoutedEventArgs e)
+        private void BtnRestoreExp_Click(object _, RoutedEventArgs __)
         {
             _expPanelTransform.X = _minimizedExpPanelTransform.X;
             _expPanelTransform.Y = _minimizedExpPanelTransform.Y;
@@ -1119,7 +1120,7 @@ namespace MapleOverlay
             ExpPanel.Visibility = Visibility.Visible;
         }
 
-        private void BtnMinimizeRealTime_Click(object sender, RoutedEventArgs e)
+        private void BtnMinimizeRealTime_Click(object _, RoutedEventArgs __)
         {
             _minimizedRealTimePanelTransform.X = _realTimeExpPanelTransform.X;
             _minimizedRealTimePanelTransform.Y = _realTimeExpPanelTransform.Y;
@@ -1129,7 +1130,7 @@ namespace MapleOverlay
             TxtMinimizedRealTimeStatus.Text = "실시간 추적 중";
         }
 
-        private void BtnRestoreRealTime_Click(object sender, RoutedEventArgs e)
+        private void BtnRestoreRealTime_Click(object _, RoutedEventArgs __)
         {
             _realTimeExpPanelTransform.X = _minimizedRealTimePanelTransform.X;
             _realTimeExpPanelTransform.Y = _minimizedRealTimePanelTransform.Y;
@@ -1145,13 +1146,6 @@ namespace MapleOverlay
 
             public long CurrentExp { get; private set; }
             public DateTime LastUpdateTime { get; private set; }
-            
-            public long MaxExp { get; private set; }
-
-            public void SetMaxExp(long maxExp)
-            {
-                MaxExp = maxExp;
-            }
 
             public void Start(long exp)
             {
