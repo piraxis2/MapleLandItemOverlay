@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -50,6 +51,7 @@ namespace MapleOverlay
         
         private bool _isSearchKeyDown = false;
         private bool _isExitKeyDown = false;
+        private bool _isCaptureKeyDown = false;
 
         private bool _isDragging = false;
         private System.Windows.Point _startPoint;
@@ -59,14 +61,30 @@ namespace MapleOverlay
 
         private TranslateTransform _infoPanelTransform = new TranslateTransform();
         private TranslateTransform _expPanelTransform = new TranslateTransform();
+        private TranslateTransform _realTimeExpPanelTransform = new TranslateTransform();
+        private TranslateTransform _minimizedExpPanelTransform = new TranslateTransform();
+        private TranslateTransform _minimizedRealTimePanelTransform = new TranslateTransform();
         private System.Windows.Point _panelDragStart;
         private bool _isPanelDragging = false;
         private FrameworkElement _draggedPanel = null;
 
-        private enum CaptureMode { Item, ExpStart, ExpEnd }
+        private enum CaptureMode { Item, ExpUI }
         private CaptureMode _currentCaptureMode = CaptureMode.Item;
 
         private ExpManager _expManager = new ExpManager();
+        private ExpManager _realTimeExpManager = new ExpManager();
+
+        // 실시간 트래커용 변수
+        private DispatcherTimer _realTimeTrackingTimer;
+        private System.Drawing.Rectangle _expSnapshotRect; // 공용 경험치 UI 영역
+        private bool _isRealTimeTracking = false;
+        private bool _isRealTimePaused = false;
+
+        // 경험치 타이머용 변수
+        private DispatcherTimer _expTimer;
+        private TimeSpan _expTimerRemaining;
+        private bool _isExpTimerRunning = false;
+        private DateTime _expTimerStartTime;
 
         public MainWindow()
         {
@@ -76,18 +94,25 @@ namespace MapleOverlay
 
             InfoPanel.RenderTransform = _infoPanelTransform;
             ExpPanel.RenderTransform = _expPanelTransform;
+            RealTimeExpPanel.RenderTransform = _realTimeExpPanelTransform;
+            MinimizedExpPanel.RenderTransform = _minimizedExpPanelTransform;
+            MinimizedRealTimePanel.RenderTransform = _minimizedRealTimePanelTransform;
 
             UpdateKeyGuide();
+
+            // 실시간 트래커 타이머 초기화
+            _realTimeTrackingTimer = new DispatcherTimer();
+            _realTimeTrackingTimer.Interval = TimeSpan.FromSeconds(1);
+            _realTimeTrackingTimer.Tick += RealTimeTrackingTimer_Tick;
+
+            // 경험치 타이머 초기화
+            _expTimer = new DispatcherTimer();
+            _expTimer.Interval = TimeSpan.FromSeconds(1);
+            _expTimer.Tick += ExpTimer_Tick;
 
             // --- 이벤트 핸들러 ---
             SearchInput.GotFocus += (s, e) => { if (SearchInput.Text == "직접 검색...") SearchInput.Text = ""; };
             SearchInput.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색..."; };
-            
-            InputExpValue.GotFocus += (s, e) => { if (InputExpValue.Text == "경험치량") InputExpValue.Text = ""; };
-            InputExpValue.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(InputExpValue.Text)) InputExpValue.Text = "경험치량"; };
-            
-            InputExpPercent.GotFocus += (s, e) => { if (InputExpPercent.Text == "%") InputExpPercent.Text = ""; };
-            InputExpPercent.LostFocus += (s, e) => { if (string.IsNullOrWhiteSpace(InputExpPercent.Text)) InputExpPercent.Text = "%"; };
         }
 
         private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -110,7 +135,12 @@ namespace MapleOverlay
                 var currentPos = e.GetPosition(this);
                 var diff = currentPos - _panelDragStart;
                 
-                TranslateTransform transform = _draggedPanel == InfoPanel ? _infoPanelTransform : _expPanelTransform;
+                TranslateTransform transform;
+                if (_draggedPanel == InfoPanel) transform = _infoPanelTransform;
+                else if (_draggedPanel == ExpPanel) transform = _expPanelTransform;
+                else if (_draggedPanel == RealTimeExpPanel) transform = _realTimeExpPanelTransform;
+                else if (_draggedPanel == MinimizedExpPanel) transform = _minimizedExpPanelTransform;
+                else transform = _minimizedRealTimePanelTransform;
                 
                 transform.X += diff.X;
                 transform.Y += diff.Y;
@@ -142,7 +172,12 @@ namespace MapleOverlay
             }
 
             var cfg = _configManager.Config;
-            KeyGuideText.Text = $"메뉴: {GetKeyName(cfg.KeyCapture)} | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
+            KeyGuideText.Text = $"메뉴: F11 | 캡처: ` | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
+            
+            if (MenuKeyGuideText != null)
+            {
+                MenuKeyGuideText.Text = KeyGuideText.Text;
+            }
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -213,7 +248,7 @@ namespace MapleOverlay
                 this.Height = SystemParameters.PrimaryScreenHeight;
             }
 
-            bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible;
+            bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible || RealTimeExpPanel.Visibility == Visibility.Visible || MinimizedExpPanel.Visibility == Visibility.Visible || MinimizedRealTimePanel.Visibility == Visibility.Visible;
             
             if (isAnyPanelVisible)
             {
@@ -234,15 +269,33 @@ namespace MapleOverlay
                 }
             }
 
-            bool isCaptureKeyDown = (GetAsyncKeyState(cfg.KeyCapture) & 0x8000) != 0;
-            if (isCaptureKeyDown && !_isSearchKeyDown)
+            // F11 키로 메뉴 토글
+            bool isMenuKeyDown = (GetAsyncKeyState(0x7A) & 0x8000) != 0;
+            if (isMenuKeyDown && !_isSearchKeyDown)
             {
                 _isSearchKeyDown = true;
                 ToggleModeSelection();
             }
-            else if (!isCaptureKeyDown)
+            else if (!isMenuKeyDown)
             {
                 _isSearchKeyDown = false;
+            }
+
+            // ` 키로 아이템 캡처 바로 실행
+            bool isCaptureKeyDown = (GetAsyncKeyState(0xC0) & 0x8000) != 0;
+            if (isCaptureKeyDown && !_isCaptureKeyDown)
+            {
+                _isCaptureKeyDown = true;
+                if (ModeSelectionPanel.Visibility == Visibility.Visible)
+                {
+                    ModeSelectionPanel.Visibility = Visibility.Collapsed;
+                }
+                _currentCaptureMode = CaptureMode.Item;
+                StartCaptureMode();
+            }
+            else if (!isCaptureKeyDown)
+            {
+                _isCaptureKeyDown = false;
             }
         }
 
@@ -254,7 +307,6 @@ namespace MapleOverlay
             }
             else
             {
-                CloseAllPanels();
                 ModeSelectionPanel.Visibility = Visibility.Visible;
             }
         }
@@ -264,52 +316,171 @@ namespace MapleOverlay
             InfoPanel.Visibility = Visibility.Hidden;
             _isInfoPanelVisible = false;
             ExpPanel.Visibility = Visibility.Hidden;
+            RealTimeExpPanel.Visibility = Visibility.Hidden;
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            MinimizedExpPanel.Visibility = Visibility.Hidden;
+            MinimizedRealTimePanel.Visibility = Visibility.Hidden;
             
             if (CaptureCanvas.Visibility == Visibility.Visible)
             {
                 EndCaptureMode();
             }
             
+            StopRealTimeTracking();
+            StopExpTimer();
             SetClickThrough(true);
         }
 
-        private void ModeCapture_Click(object sender, RoutedEventArgs e)
+        private void ModeCaptureExpUI_Click(object sender, RoutedEventArgs e)
         {
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
-            _currentCaptureMode = CaptureMode.Item;
+            _currentCaptureMode = CaptureMode.ExpUI;
             StartCaptureMode();
         }
 
         private void ModeExp_Click(object sender, RoutedEventArgs e)
         {
+            if (_expSnapshotRect.IsEmpty)
+            {
+                MessageBox.Show("먼저 '경험치 UI 캡처'를 실행해주세요.", "알림");
+                return;
+            }
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
             ExpPanel.Visibility = Visibility.Visible;
+            MinimizedExpPanel.Visibility = Visibility.Hidden;
+        }
+
+        private void ModeRealTimeExp_Click(object sender, RoutedEventArgs e)
+        {
+            if (_expSnapshotRect.IsEmpty)
+            {
+                MessageBox.Show("먼저 '경험치 UI 캡처'를 실행해주세요.", "알림");
+                return;
+            }
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            RealTimeExpPanel.Visibility = Visibility.Visible;
+            MinimizedRealTimePanel.Visibility = Visibility.Hidden;
+            
+            _isRealTimeTracking = true;
+            _isRealTimePaused = false;
+            BtnPauseResumeRealTime.Content = "일시정지";
+            BtnPauseResumeRealTime.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#444444"));
+            _realTimeTrackingTimer.Start();
+            
+            PerformRealTimeUpdate(true);
         }
 
         private void ModeManual_Click(object sender, RoutedEventArgs e)
         {
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            InfoPanel.Visibility = Visibility.Visible;
             OpenManualSearch();
-        }
-
-        private void BtnStartExp_Click(object sender, RoutedEventArgs e)
-        {
-            ExpPanel.Visibility = Visibility.Hidden;
-            _currentCaptureMode = CaptureMode.ExpStart;
-            StartCaptureMode();
         }
 
         private void BtnUpdateExp_Click(object sender, RoutedEventArgs e)
         {
-            ExpPanel.Visibility = Visibility.Hidden;
-            _currentCaptureMode = CaptureMode.ExpEnd;
-            StartCaptureMode();
+            PerformExpUpdate();
+        }
+
+        private void PerformExpUpdate(bool isStart = false)
+        {
+            if (!_expSnapshotRect.IsEmpty)
+            {
+                try
+                {
+                    using (Bitmap bitmap = new Bitmap(_expSnapshotRect.Width, _expSnapshotRect.Height))
+                    {
+                        using (Graphics g = Graphics.FromImage(bitmap))
+                        {
+                            g.CopyFromScreen(_expSnapshotRect.Left, _expSnapshotRect.Top, 0, 0, bitmap.Size);
+                        }
+                        
+                        string text = _ocrManager.RecognizeText(bitmap);
+                        ProcessExpOcr(text, isStart);
+                    }
+                }
+                catch
+                {
+                    MessageBox.Show("경험치 UI를 읽는 중 오류가 발생했습니다.", "오류");
+                }
+            }
+        }
+        
+        private void PerformRealTimeUpdate(bool isStart = false)
+        {
+            if (!_expSnapshotRect.IsEmpty)
+            {
+                try
+                {
+                    using (Bitmap bitmap = new Bitmap(_expSnapshotRect.Width, _expSnapshotRect.Height))
+                    {
+                        using (Graphics g = Graphics.FromImage(bitmap))
+                        {
+                            g.CopyFromScreen(_expSnapshotRect.Left, _expSnapshotRect.Top, 0, 0, bitmap.Size);
+                        }
+                        
+                        string text = _ocrManager.RecognizeText(bitmap);
+                        ProcessRealTimeExpOcr(text, isStart);
+                    }
+                }
+                catch
+                {
+                    // 실시간 모드에서는 오류 메시지를 띄우지 않음
+                }
+            }
         }
 
         private void CloseExpButton_Click(object sender, RoutedEventArgs e)
         {
             ExpPanel.Visibility = Visibility.Hidden;
+            MinimizedExpPanel.Visibility = Visibility.Hidden;
+            StopExpTimer();
+        }
+
+        private void CloseRealTimeExpButton_Click(object sender, RoutedEventArgs e)
+        {
+            RealTimeExpPanel.Visibility = Visibility.Hidden;
+            MinimizedRealTimePanel.Visibility = Visibility.Hidden;
+            StopRealTimeTracking();
+        }
+
+        private void BtnStopRealTimeTracking_Click(object sender, RoutedEventArgs e)
+        {
+            StopRealTimeTracking();
+            RealTimeExpPanel.Visibility = Visibility.Hidden;
+            MinimizedRealTimePanel.Visibility = Visibility.Hidden;
+        }
+
+        private void BtnPauseResumeRealTime_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isRealTimePaused)
+            {
+                _isRealTimePaused = false;
+                _realTimeTrackingTimer.Start();
+                BtnPauseResumeRealTime.Content = "일시정지";
+                BtnPauseResumeRealTime.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#444444"));
+            }
+            else
+            {
+                _isRealTimePaused = true;
+                _realTimeTrackingTimer.Stop();
+                BtnPauseResumeRealTime.Content = "재개";
+                BtnPauseResumeRealTime.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#006600"));
+            }
+        }
+
+        private void BtnRestartRealTime_Click(object sender, RoutedEventArgs e)
+        {
+            _isRealTimePaused = false;
+            BtnPauseResumeRealTime.Content = "일시정지";
+            BtnPauseResumeRealTime.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#444444"));
+            
+            if (!_realTimeTrackingTimer.IsEnabled)
+            {
+                _realTimeTrackingTimer.Start();
+            }
+            
+            PerformRealTimeUpdate(true); // isStart = true로 호출하여 초기화
         }
 
         private void CloseInfoPanel()
@@ -321,7 +492,6 @@ namespace MapleOverlay
 
         private void OpenManualSearch()
         {
-            InfoPanel.Visibility = Visibility.Visible;
             _isInfoPanelVisible = true;
             
             ItemNameText.Text = "아이템 검색";
@@ -344,10 +514,10 @@ namespace MapleOverlay
 
         private async void StartCaptureMode()
         {
+            // 캡처 중에는 메뉴와 정보 패널만 숨김
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
             InfoPanel.Visibility = Visibility.Hidden;
             _isInfoPanelVisible = false;
-            ExpPanel.Visibility = Visibility.Hidden;
-            ModeSelectionPanel.Visibility = Visibility.Collapsed;
 
             await Task.Delay(100);
 
@@ -373,6 +543,12 @@ namespace MapleOverlay
             this.Top = 0;
             this.Width = screenWidth;
             this.Height = screenHeight;
+
+            string modeText = "모드: -";
+            if (_currentCaptureMode == CaptureMode.Item) modeText = "모드: 아이템 검색";
+            else if (_currentCaptureMode == CaptureMode.ExpUI) modeText = "모드: 경험치 UI 캡처";
+            
+            CaptureModeText.Text = modeText;
 
             SetClickThrough(false);
             CaptureCanvas.Visibility = Visibility.Visible;
@@ -445,62 +621,60 @@ namespace MapleOverlay
 
             if (w > 10 && h > 10)
             {
-                GetCursorPos(out POINT pt);
-                _mapleHandle = FindWindow("MapleStoryClass", "MapleStory");
+                System.Drawing.Rectangle cropRect = new System.Drawing.Rectangle((int)x, (int)y, (int)w, (int)h);
                 
-                PerformOcrFromFrozenImage((int)x, (int)y, (int)w, (int)h);
-            }
-            else
-            {
-                if (_currentCaptureMode == CaptureMode.ExpStart || _currentCaptureMode == CaptureMode.ExpEnd)
+                if (_currentCaptureMode == CaptureMode.Item)
                 {
-                    ExpPanel.Visibility = Visibility.Visible;
+                    PerformOcrFromFrozenImage(cropRect);
+                }
+                else if (_currentCaptureMode == CaptureMode.ExpUI)
+                {
+                    _expSnapshotRect = cropRect;
+                    MessageBox.Show("경험치 UI 영역이 저장되었습니다.", "알림");
                 }
             }
         }
 
-        private void PerformOcrFromFrozenImage(int x, int y, int width, int height)
+        private void PerformOcrFromFrozenImage(System.Drawing.Rectangle cropRect)
         {
             if (_frozenScreenBitmap == null) return;
 
             try
             {
-                System.Drawing.Rectangle cropRect = new System.Drawing.Rectangle(x, y, width, height);
-                
-                if (cropRect.Right > _frozenScreenBitmap.Width) cropRect.Width = _frozenScreenBitmap.Width - x;
-                if (cropRect.Bottom > _frozenScreenBitmap.Height) cropRect.Height = _frozenScreenBitmap.Height - y;
+                if (cropRect.Right > _frozenScreenBitmap.Width) cropRect.Width = _frozenScreenBitmap.Width - cropRect.X;
+                if (cropRect.Bottom > _frozenScreenBitmap.Height) cropRect.Height = _frozenScreenBitmap.Height - cropRect.Y;
 
                 using (Bitmap cropped = _frozenScreenBitmap.Clone(cropRect, _frozenScreenBitmap.PixelFormat))
                 {
                     string text = _ocrManager.RecognizeText(cropped);
-                    
-                    if (_currentCaptureMode == CaptureMode.Item)
-                    {
-                        ProcessItemOcr(text);
-                    }
-                    else if (_currentCaptureMode == CaptureMode.ExpStart)
-                    {
-                        ProcessExpOcr(text, true);
-                    }
-                    else if (_currentCaptureMode == CaptureMode.ExpEnd)
-                    {
-                        ProcessExpOcr(text, false);
-                    }
+                    ProcessItemOcr(text);
                 }
             }
             catch (Exception ex)
             {
-                if (_currentCaptureMode == CaptureMode.Item)
-                {
-                    ItemDescText.Text = $"캡처 오류: {ex.Message}";
-                    InfoPanel.Visibility = Visibility.Visible;
-                    _isInfoPanelVisible = true;
-                }
-                else
-                {
-                    ExpPanel.Visibility = Visibility.Visible;
-                }
+                ItemDescText.Text = $"캡처 오류: {ex.Message}";
+                InfoPanel.Visibility = Visibility.Visible;
+                _isInfoPanelVisible = true;
             }
+        }
+
+        private void RealTimeTrackingTimer_Tick(object sender, EventArgs e)
+        {
+            if (!_isRealTimeTracking || _expSnapshotRect.IsEmpty || _isRealTimePaused) return;
+
+            PerformRealTimeUpdate();
+
+            if (MinimizedRealTimePanel.Visibility == Visibility.Visible)
+            {
+                TxtMinimizedRealTimeStatus.Text = "실시간 추적 중";
+            }
+        }
+
+        private void StopRealTimeTracking()
+        {
+            _isRealTimeTracking = false;
+            _isRealTimePaused = false;
+            _realTimeTrackingTimer.Stop();
         }
 
         private void ProcessItemOcr(string text)
@@ -508,7 +682,8 @@ namespace MapleOverlay
             InfoPanel.Visibility = Visibility.Visible;
             _isInfoPanelVisible = true;
             
-            ItemNameText.Text = $"인식됨: [{text}]";
+            ItemNameText.Text = string.IsNullOrWhiteSpace(text) ? "인식 실패" : $"OCR: {text}";
+            
             ItemReqText.Visibility = Visibility.Collapsed;
             ReqSeparator.Visibility = Visibility.Collapsed;
             ItemStatsText.Text = "";
@@ -523,69 +698,96 @@ namespace MapleOverlay
             }
             else
             {
-                ItemNameText.Text = "인식 실패";
                 ItemDescText.Text = "글자를 읽지 못했습니다. 아래 검색창을 이용하세요.";
             }
         }
 
         private void ProcessExpOcr(string text, bool isStart)
         {
-            ExpPanel.Visibility = Visibility.Visible;
+            if (MinimizedExpPanel.Visibility != Visibility.Visible)
+            {
+                ExpPanel.Visibility = Visibility.Visible;
+            }
             TxtDebugOcr.Text = string.IsNullOrWhiteSpace(text) ? "(인식 실패)" : text;
 
             if (string.IsNullOrWhiteSpace(text)) return;
 
             long expValue = ParseExpValue(text);
-            double expPercent = ParseExpPercent(text);
-
+            
             if (expValue < 0) return;
 
-            UpdateExpPanel(expValue, expPercent, isStart);
+            UpdateExpPanel(expValue, isStart);
         }
 
-        // [추가] 수동 시작 버튼 핸들러
-        private void BtnManualStart_Click(object sender, RoutedEventArgs e)
+        private void ProcessRealTimeExpOcr(string text, bool isStart)
         {
-            long expValue = ParseExpValue(InputExpValue.Text);
-            double expPercent = ParseExpPercent(InputExpPercent.Text);
+            if (MinimizedRealTimePanel.Visibility != Visibility.Visible)
+            {
+                RealTimeExpPanel.Visibility = Visibility.Visible;
+            }
+            TxtRealTimeDebugOcr.Text = string.IsNullOrWhiteSpace(text) ? "(인식 실패)" : text;
 
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            long expValue = ParseExpValue(text);
+            
             if (expValue < 0) return;
 
-            UpdateExpPanel(expValue, expPercent, true);
+            UpdateRealTimeExpPanel(expValue, isStart);
         }
 
-        // [추가] 수동 갱신 버튼 핸들러
-        private void BtnManualUpdate_Click(object sender, RoutedEventArgs e)
-        {
-            long expValue = ParseExpValue(InputExpValue.Text);
-            double expPercent = ParseExpPercent(InputExpPercent.Text);
-
-            if (expValue < 0) return;
-
-            UpdateExpPanel(expValue, expPercent, false);
-        }
-
-        private void UpdateExpPanel(long expValue, double expPercent, bool isStart)
+        private void UpdateExpPanel(long expValue, bool isStart)
         {
             if (isStart)
             {
-                _expManager.Start(expValue, expPercent);
-                TxtStartExp.Text = $"{expValue:N0} ({expPercent:F2}%)";
+                if (_isExpTimerRunning)
+                {
+                    _expManager.StartWithTime(expValue, _expTimerStartTime);
+                }
+                else
+                {
+                    _expManager.Start(expValue);
+                }
+
+                TxtStartExp.Text = $"{expValue:N0}";
                 TxtCurrentExp.Text = "-";
                 TxtStartTime.Text =_expManager.StartTime.ToString(@"hh\:mm\:ss");
                 TxtElapsedTime.Text = "00:00:00";
-                TxtGainedExp.Text = "0 (0.00%)";
+                TxtGainedExp.Text = "0";
                 TxtExpPerHour.Text = "0 / hr";
             }
             else
             {
-                _expManager.Update(expValue, expPercent);
-                TxtCurrentExp.Text = $"{expValue:N0} ({expPercent:F2}%)";
+                _expManager.Update(expValue);
+                TxtCurrentExp.Text = $"{expValue:N0}";
                 
                 var stats = _expManager.GetStats();
                 TxtElapsedTime.Text = stats.Elapsed.ToString(@"hh\:mm\:ss");
-                TxtGainedExp.Text = $"{stats.GainedExp:N0} ({stats.GainedPercent:F2}%)";
+                TxtGainedExp.Text = $"{stats.GainedExp:N0}";
                 TxtExpPerHour.Text = $"{stats.ExpPerHour:N0} / hr";
+            }
+        }
+
+        private void UpdateRealTimeExpPanel(long expValue, bool isStart)
+        {
+            if (isStart)
+            {
+                _realTimeExpManager.Start(expValue);
+                TxtRealTimeStartExp.Text = $"{expValue:N0}";
+                TxtRealTimeCurrentExp.Text = "-";
+                TxtRealTimeGainedExp.Text = "0";
+                TxtRealTimeElapsedTime.Text = "00:00:00";
+                TxtRealTimeExpPerHour.Text = "0 / hr";
+            }
+            else
+            {
+                _realTimeExpManager.Update(expValue);
+                TxtRealTimeCurrentExp.Text = $"{expValue:N0}";
+                
+                var stats = _realTimeExpManager.GetStats();
+                TxtRealTimeElapsedTime.Text = stats.Elapsed.ToString(@"hh\:mm\:ss");
+                TxtRealTimeGainedExp.Text = $"{stats.GainedExp:N0}";
+                TxtRealTimeExpPerHour.Text = $"{stats.ExpPerHour:N0} / hr";
             }
         }
 
@@ -594,53 +796,29 @@ namespace MapleOverlay
             if (string.IsNullOrWhiteSpace(text)) return -1;
             try
             {
-                // [수정] 정규식으로 "숫자 + 괄호" 패턴 찾기
-                // 예: 12345[12.34%] 또는 12345(12.34%)
-                // 앞뒤에 붙은 쓰레기 값(1 등)을 무시하기 위해 패턴 매칭 사용
-                var match = Regex.Match(text, @"(\d+)[\(\[]");
-                if (match.Success)
+                var matchBracket = Regex.Match(text, @"([\d,]+)\s*[\[\(]");
+                if (matchBracket.Success)
                 {
-                    string numStr = match.Groups[1].Value;
-                    if (long.TryParse(numStr, out long result))
-                    {
-                        return result;
-                    }
+                    string clean = matchBracket.Groups[1].Value.Replace(",", "");
+                    if (long.TryParse(clean, out long result)) return result;
                 }
-                
-                // 패턴 매칭 실패 시 기존 방식 시도 (숫자만 추출)
-                // 하지만 이 경우 앞에 붙은 '1'도 포함될 위험이 있음.
-                // 일단 패턴 매칭 실패하면 실패로 처리하는 게 안전할 수 있음.
-                // 여기서는 기존 로직 유지하되, 패턴 매칭을 우선함.
-                
-                string numPart = text.Split('(', '[')[0];
-                string cleanNum = Regex.Replace(numPart, @"[^0-9]", "");
-                if (long.TryParse(cleanNum, out long expValue))
+
+                var matchExp = Regex.Match(text, @"EXP\.?\s*([\d,]+)", RegexOptions.IgnoreCase);
+                if (matchExp.Success)
                 {
-                    return expValue;
+                    string clean = matchExp.Groups[1].Value.Replace(",", "");
+                    if (long.TryParse(clean, out long result)) return result;
+                }
+
+                var matchNum = Regex.Match(text, @"[\d,]+");
+                if (matchNum.Success)
+                {
+                    string clean = matchNum.Value.Replace(",", "");
+                    if (long.TryParse(clean, out long result)) return result;
                 }
             }
             catch { }
             return -1;
-        }
-
-        private double ParseExpPercent(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return 0.0;
-            try
-            {
-                // [수정] 정규식으로 괄호 안의 숫자+점+숫자 패턴 찾기
-                var match = Regex.Match(text, @"[\(\[]\s*([\d\.]+)\s*%?[\)\]]");
-                if (match.Success)
-                {
-                    string percentStr = match.Groups[1].Value;
-                    if (double.TryParse(percentStr, out double result))
-                    {
-                        return result;
-                    }
-                }
-            }
-            catch { }
-            return 0.0;
         }
 
         private void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -678,7 +856,7 @@ namespace MapleOverlay
                     return;
                 }
 
-                ItemNameText.Text = $"검색 중: {cleanName}";
+                ItemDescText.Text = $"검색 중: {cleanName}";
                 
                 var results = await _apiManager.SearchItemAsync(cleanName);
                 
@@ -841,42 +1019,170 @@ namespace MapleOverlay
             }
         }
 
+        // --- 경험치 타이머 관련 로직 ---
+
+        private void BtnToggleTimer_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isExpTimerRunning)
+            {
+                StopExpTimer();
+            }
+            else
+            {
+                if (int.TryParse(InputTimerMinutes.Text, out int minutes) && minutes > 0)
+                {
+                    StartExpTimer(minutes);
+                }
+                else
+                {
+                    TxtTimerCountdown.Text = "시간 오류";
+                }
+            }
+        }
+
+        private void StartExpTimer(int minutes)
+        {
+            if (_expSnapshotRect.IsEmpty)
+            {
+                MessageBox.Show("먼저 '경험치 UI 캡처'를 실행해주세요.", "알림");
+                return;
+            }
+
+            _expTimerRemaining = TimeSpan.FromMinutes(minutes);
+            TxtTimerCountdown.Text = _expTimerRemaining.ToString(@"mm\:ss");
+            
+            _isExpTimerRunning = true;
+            _expTimerStartTime = DateTime.Now; // 타이머 시작 시간 기록
+
+            BtnToggleTimer.Content = "타이머 중지";
+            BtnToggleTimer.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#AA0000"));
+            
+            PerformExpUpdate(true); // isStart = true
+
+            _expTimer.Start();
+        }
+
+        private void StopExpTimer()
+        {
+            _isExpTimerRunning = false;
+            _expTimer.Stop();
+            
+            BtnToggleTimer.Content = "타이머 시작";
+            BtnToggleTimer.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#006600"));
+            TxtTimerCountdown.Text = "00:00";
+        }
+
+        private void ExpTimer_Tick(object sender, EventArgs e)
+        {
+            _expTimerRemaining = _expTimerRemaining.Add(TimeSpan.FromSeconds(-1));
+            
+            if (_expTimerRemaining.TotalSeconds <= 0)
+            {
+                PerformExpUpdate();
+                StopExpTimer();
+
+                if (MinimizedExpPanel.Visibility == Visibility.Visible)
+                {
+                    TxtMinimizedExpStatus.Text = "측정 완료";
+                }
+            }
+            else
+            {
+                string remainingTime = _expTimerRemaining.ToString(@"mm\:ss");
+                TxtTimerCountdown.Text = remainingTime;
+
+                if (MinimizedExpPanel.Visibility == Visibility.Visible)
+                {
+                    TxtMinimizedExpStatus.Text = $"타이머: {remainingTime}";
+                }
+            }
+        }
+
+        // --- 최소화/복원 로직 ---
+
+        private void BtnMinimizeExp_Click(object sender, RoutedEventArgs e)
+        {
+            _minimizedExpPanelTransform.X = _expPanelTransform.X;
+            _minimizedExpPanelTransform.Y = _expPanelTransform.Y;
+
+            ExpPanel.Visibility = Visibility.Hidden;
+            MinimizedExpPanel.Visibility = Visibility.Visible;
+            TxtMinimizedExpStatus.Text = _isExpTimerRunning ? $"타이머: {_expTimerRemaining:mm\\:ss}" : "타이머 대기 중";
+        }
+
+        private void BtnRestoreExp_Click(object sender, RoutedEventArgs e)
+        {
+            _expPanelTransform.X = _minimizedExpPanelTransform.X;
+            _expPanelTransform.Y = _minimizedExpPanelTransform.Y;
+
+            MinimizedExpPanel.Visibility = Visibility.Hidden;
+            ExpPanel.Visibility = Visibility.Visible;
+        }
+
+        private void BtnMinimizeRealTime_Click(object sender, RoutedEventArgs e)
+        {
+            _minimizedRealTimePanelTransform.X = _realTimeExpPanelTransform.X;
+            _minimizedRealTimePanelTransform.Y = _realTimeExpPanelTransform.Y;
+
+            RealTimeExpPanel.Visibility = Visibility.Hidden;
+            MinimizedRealTimePanel.Visibility = Visibility.Visible;
+            TxtMinimizedRealTimeStatus.Text = "실시간 추적 중";
+        }
+
+        private void BtnRestoreRealTime_Click(object sender, RoutedEventArgs e)
+        {
+            _realTimeExpPanelTransform.X = _minimizedRealTimePanelTransform.X;
+            _realTimeExpPanelTransform.Y = _minimizedRealTimePanelTransform.Y;
+
+            MinimizedRealTimePanel.Visibility = Visibility.Hidden;
+            RealTimeExpPanel.Visibility = Visibility.Visible;
+        }
+
         public class ExpManager
         {
             public long StartExp { get; private set; }
-            public double StartPercent { get; private set; }
             public DateTime StartTime { get; private set; }
 
             public long CurrentExp { get; private set; }
-            public double CurrentPercent { get; private set; }
             public DateTime LastUpdateTime { get; private set; }
+            
+            public long MaxExp { get; private set; }
 
-            public void Start(long exp, double percent)
+            public void SetMaxExp(long maxExp)
+            {
+                MaxExp = maxExp;
+            }
+
+            public void Start(long exp)
             {
                 StartExp = exp;
-                StartPercent = percent;
                 StartTime = DateTime.Now;
                 
                 CurrentExp = exp;
-                CurrentPercent = percent;
                 LastUpdateTime = DateTime.Now;
             }
 
-            public void Update(long exp, double percent)
+            public void StartWithTime(long exp, DateTime startTime)
+            {
+                StartExp = exp;
+                StartTime = startTime;
+                
+                CurrentExp = exp;
+                LastUpdateTime = DateTime.Now;
+            }
+
+            public void Update(long exp)
             {
                 CurrentExp = exp;
-                CurrentPercent = percent;
                 LastUpdateTime = DateTime.Now;
             }
 
-            public (TimeSpan Elapsed, long GainedExp, double GainedPercent, long ExpPerHour) GetStats()
+            public (TimeSpan Elapsed, long GainedExp, long ExpPerHour) GetStats()
             {
                 var elapsed = LastUpdateTime - StartTime;
                 long gainedExp = CurrentExp - StartExp;
-                double gainedPercent = CurrentPercent - StartPercent;
 
                 if (gainedExp < 0) gainedExp = 0; 
-                if (gainedPercent < 0) gainedPercent = 0;
 
                 long expPerHour = 0;
                 if (elapsed.TotalHours > 0)
@@ -884,7 +1190,7 @@ namespace MapleOverlay
                     expPerHour = (long)(gainedExp / elapsed.TotalHours);
                 }
 
-                return (elapsed, gainedExp, gainedPercent, expPerHour);
+                return (elapsed, gainedExp, expPerHour);
             }
         }
     }
