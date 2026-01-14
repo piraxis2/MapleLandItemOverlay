@@ -10,76 +10,71 @@
         ShowInTaskbar="False">
     
     <Grid>
-        <!-- 1. 정보 패널 -->
+        <!-- 1. 정보 패널 (중앙) -->
         <Border x:Name="InfoPanel" 
                 Width="300"
                 MaxHeight="600"
                 Background="#CC000000" 
                 CornerRadius="10" 
-                HorizontalAlignment="Left" 
-                VerticalAlignment="Top"
+                HorizontalAlignment="Center" 
+                VerticalAlignment="Center"
                 Visibility="Hidden">
             
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/> <!-- 닫기 버튼 -->
+                    <RowDefinition Height="*"/>    <!-- 내용 -->
+                    <RowDefinition Height="Auto"/> <!-- 검색창 -->
+                    <RowDefinition Height="Auto"/> <!-- [추가] 단축키 안내 -->
                 </Grid.RowDefinitions>
 
-                <!-- 내용 영역 (스크롤 가능) -->
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="5,5,5,0" MaxHeight="500">
-                    <StackPanel Margin="10">
-                        <!-- 아이템 이름 -->
-                        <TextBlock x:Name="ItemNameText" Text="아이템명" Foreground="#FFCC00" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
-                        
-                        <Separator Margin="0,10" Background="#555555"/>
-                        
-                        <!-- REQ 정보 -->
-                        <TextBlock x:Name="ItemReqText" Text="" Foreground="#FF9900" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed"/>
-                        
-                        <Separator x:Name="ReqSeparator" Margin="0,8" Background="#444444" Visibility="Collapsed"/>
+                <!-- 닫기 버튼 -->
+                <Grid Grid.Row="0" Margin="0,5,5,0">
+                    <Button x:Name="CloseButton" 
+                            Content="✕" 
+                            HorizontalAlignment="Right"
+                            Width="25" Height="25"
+                            Background="Transparent"
+                            Foreground="#AAAAAA"
+                            BorderThickness="0"
+                            FontWeight="Bold"
+                            Click="CloseButton_Click"
+                            Cursor="Hand"/>
+                </Grid>
 
-                        <!-- 아이템 옵션 -->
+                <!-- 내용 -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="5,0,5,0" MaxHeight="500">
+                    <StackPanel Margin="10,0,10,10">
+                        <TextBlock x:Name="ItemNameText" Text="아이템명" Foreground="#FFCC00" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                        <Separator Margin="0,10" Background="#555555"/>
+                        <TextBlock x:Name="ItemReqText" Text="" Foreground="#FF9900" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <Separator x:Name="ReqSeparator" Margin="0,8" Background="#444444" Visibility="Collapsed"/>
                         <TextBlock x:Name="ItemStatsText" Text="" Foreground="White" FontSize="13" LineHeight="20" TextWrapping="Wrap"/>
-                        
                         <Separator x:Name="DescSeparator" Margin="0,10" Background="#555555" Visibility="Collapsed"/>
-                        
-                        <!-- 아이템 설명 -->
                         <TextBlock x:Name="ItemDescText" Text="설명" Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap" FontFamily="Consolas"/>
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- [추가] 수동 검색 영역 (하단 고정) -->
-                <Border Grid.Row="1" Margin="10" Background="#33FFFFFF" CornerRadius="5" Padding="5">
+                <!-- 수동 검색 -->
+                <Border Grid.Row="2" Margin="10,5,10,5" Background="#33FFFFFF" CornerRadius="5" Padding="5">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        
-                        <TextBox x:Name="SearchInput" 
-                                 Grid.Column="0" 
-                                 Height="25" 
-                                 VerticalContentAlignment="Center"
-                                 Background="Transparent" 
-                                 Foreground="White" 
-                                 BorderThickness="0"
-                                 CaretBrush="White"
-                                 KeyDown="SearchInput_KeyDown"
-                                 Text="직접 검색..."/>
-                        
-                        <Button x:Name="SearchButton" 
-                                Grid.Column="1" 
-                                Content="검색" 
-                                Width="50" 
-                                Height="25" 
-                                Margin="5,0,0,0"
-                                Click="SearchButton_Click"
-                                Background="#444444"
-                                Foreground="White"
-                                BorderThickness="0"/>
+                        <TextBox x:Name="SearchInput" Grid.Column="0" Height="25" VerticalContentAlignment="Center" Background="Transparent" Foreground="White" BorderThickness="0" CaretBrush="White" KeyDown="SearchInput_KeyDown" Text="직접 검색..."/>
+                        <Button x:Name="SearchButton" Grid.Column="1" Content="검색" Width="50" Height="25" Margin="5,0,0,0" Click="SearchButton_Click" Background="#444444" Foreground="White" BorderThickness="0"/>
                     </Grid>
                 </Border>
+
+                <!-- [이동됨] 단축키 안내 -->
+                <TextBlock x:Name="KeyGuideText" 
+                           Grid.Row="3"
+                           Text="캡처: ` | 검색: \ | 종료: F10" 
+                           Foreground="#888888" 
+                           FontSize="11" 
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,10"/>
             </Grid>
         </Border>
 
@@ -90,12 +85,7 @@
                 MouseDown="CaptureCanvas_MouseDown"
                 MouseMove="CaptureCanvas_MouseMove"
                 MouseUp="CaptureCanvas_MouseUp">
-            
-            <Rectangle x:Name="SelectionRect"
-                       Stroke="#00FF00"
-                       StrokeThickness="2"
-                       Fill="#3300FF00"
-                       Visibility="Collapsed"/>
+            <Rectangle x:Name="SelectionRect" Stroke="#00FF00" StrokeThickness="2" Fill="#3300FF00" Visibility="Collapsed"/>
         </Canvas>
     </Grid>
 </Window>

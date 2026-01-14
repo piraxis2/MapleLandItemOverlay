@@ -45,14 +45,15 @@ namespace MapleOverlay
         private IntPtr _mapleHandle;
         private MapleApiManager _apiManager = new MapleApiManager();
         private OcrManager _ocrManager;
+        private ConfigManager _configManager;
         
         private bool _isSearchKeyDown = false;
-        private const int VK_OEM_3 = 0xC0; // ` 키
-        private const int VK_ESCAPE = 0x1B; // ESC 키
+        private bool _isManualSearchKeyDown = false;
+        private bool _isExitKeyDown = false;
 
         private bool _isDragging = false;
         private System.Windows.Point _startPoint;
-        private bool _isInfoPanelFixed = false;
+        private bool _isInfoPanelVisible = false;
 
         private Bitmap _frozenScreenBitmap;
 
@@ -60,13 +61,32 @@ namespace MapleOverlay
         {
             InitializeComponent();
             _ocrManager = new OcrManager();
-            
+            _configManager = new ConfigManager();
+
+            UpdateKeyGuide();
+
             SearchInput.GotFocus += (s, e) => {
                 if (SearchInput.Text == "직접 검색...") SearchInput.Text = "";
             };
             SearchInput.LostFocus += (s, e) => {
                 if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색...";
             };
+        }
+
+        private void UpdateKeyGuide()
+        {
+            string GetKeyName(int keyCode)
+            {
+                if (keyCode == 0xC0) return "`";
+                if (keyCode == 0xDC) return "\\";
+                if (keyCode >= 0x70 && keyCode <= 0x7B) return "F" + (keyCode - 0x6F);
+                if (keyCode == 0x1B) return "ESC";
+                return ((Key)KeyInterop.KeyFromVirtualKey(keyCode)).ToString();
+            }
+
+            var cfg = _configManager.Config;
+            // [수정] 닫기(ESC) 추가
+            KeyGuideText.Text = $"캡처: {GetKeyName(cfg.KeyCapture)} | 검색: {GetKeyName(cfg.KeyManualSearch)} | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 프로그램 종료: {GetKeyName(cfg.KeyExit)}";
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -93,8 +113,23 @@ namespace MapleOverlay
 
         private void TrackingTimer_Tick(object sender, EventArgs e)
         {
-            // [추가] ESC 키 감지 -> 정보창 닫기 및 초기화
-            if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0)
+            var cfg = _configManager.Config;
+
+            if ((GetAsyncKeyState(cfg.KeyExit) & 0x8000) != 0)
+            {
+                if (!_isExitKeyDown)
+                {
+                    _isExitKeyDown = true;
+                    Application.Current.Shutdown();
+                    return;
+                }
+            }
+            else
+            {
+                _isExitKeyDown = false;
+            }
+
+            if ((GetAsyncKeyState(cfg.KeyClosePanel) & 0x8000) != 0)
             {
                 CloseInfoPanel();
                 return;
@@ -103,8 +138,7 @@ namespace MapleOverlay
             if (CaptureCanvas.Visibility == Visibility.Visible) return;
 
             _mapleHandle = FindWindow("MapleStoryClass", "MapleStory");
-            GetCursorPos(out POINT pt);
-
+            
             if (_mapleHandle != IntPtr.Zero)
             {
                 if (GetWindowRect(_mapleHandle, out RECT rect))
@@ -113,13 +147,6 @@ namespace MapleOverlay
                     this.Top = rect.Top;
                     this.Width = rect.Right - rect.Left;
                     this.Height = rect.Bottom - rect.Top;
-                    
-                    if (!_isInfoPanelFixed)
-                    {
-                        double relativeX = pt.X - rect.Left;
-                        double relativeY = pt.Y - rect.Top;
-                        InfoPanel.Margin = new Thickness(relativeX + 20, relativeY + 20, 0, 0);
-                    }
                 }
             }
             else
@@ -128,14 +155,9 @@ namespace MapleOverlay
                 this.Top = 0;
                 this.Width = SystemParameters.PrimaryScreenWidth;
                 this.Height = SystemParameters.PrimaryScreenHeight;
-                
-                if (!_isInfoPanelFixed)
-                {
-                    InfoPanel.Margin = new Thickness(pt.X + 20, pt.Y + 20, 0, 0);
-                }
             }
 
-            if (_isInfoPanelFixed)
+            if (_isInfoPanelVisible)
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
                 int extendedStyle = GetWindowLong(hwnd, -20);
@@ -154,39 +176,69 @@ namespace MapleOverlay
                 }
             }
 
-            bool isKeyDown = (GetAsyncKeyState(VK_OEM_3) & 0x8000) != 0;
-
-            if (isKeyDown && !_isSearchKeyDown)
+            bool isCaptureKeyDown = (GetAsyncKeyState(cfg.KeyCapture) & 0x8000) != 0;
+            if (isCaptureKeyDown && !_isSearchKeyDown)
             {
                 _isSearchKeyDown = true;
                 StartCaptureMode();
             }
-            else if (!isKeyDown)
+            else if (!isCaptureKeyDown)
             {
                 _isSearchKeyDown = false;
             }
+
+            bool isManualSearchKeyDown = (GetAsyncKeyState(cfg.KeyManualSearch) & 0x8000) != 0;
+            if (isManualSearchKeyDown && !_isManualSearchKeyDown)
+            {
+                _isManualSearchKeyDown = true;
+                OpenManualSearch();
+            }
+            else if (!isManualSearchKeyDown)
+            {
+                _isManualSearchKeyDown = false;
+            }
         }
 
-        // [추가] 정보창 닫기 메서드
         private void CloseInfoPanel()
         {
             InfoPanel.Visibility = Visibility.Hidden;
-            _isInfoPanelFixed = false;
+            _isInfoPanelVisible = false;
             
-            // 캡처 모드 중이었다면 종료
             if (CaptureCanvas.Visibility == Visibility.Visible)
             {
                 EndCaptureMode();
             }
             
-            // 클릭 관통 다시 활성화
             SetClickThrough(true);
+        }
+
+        private void OpenManualSearch()
+        {
+            InfoPanel.Visibility = Visibility.Visible;
+            _isInfoPanelVisible = true;
+            
+            ItemNameText.Text = "아이템 검색";
+            ItemReqText.Visibility = Visibility.Collapsed;
+            ReqSeparator.Visibility = Visibility.Collapsed;
+            ItemStatsText.Text = "";
+            ItemDescText.Text = "검색어를 입력하세요.";
+            DescSeparator.Visibility = Visibility.Collapsed;
+            
+            SearchInput.Text = "";
+            SearchInput.Focus();
+            
+            SetClickThrough(false);
+        }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            CloseInfoPanel();
         }
 
         private async void StartCaptureMode()
         {
             InfoPanel.Visibility = Visibility.Hidden;
-            _isInfoPanelFixed = false;
+            _isInfoPanelVisible = false;
 
             await Task.Delay(100);
 
@@ -284,7 +336,7 @@ namespace MapleOverlay
 
             if (w > 10 && h > 10)
             {
-                _isInfoPanelFixed = true;
+                _isInfoPanelVisible = true;
                 
                 GetCursorPos(out POINT pt);
                 _mapleHandle = FindWindow("MapleStoryClass", "MapleStory");
@@ -295,8 +347,6 @@ namespace MapleOverlay
                     offsetX = rect.Left;
                     offsetY = rect.Top;
                 }
-
-                InfoPanel.Margin = new Thickness(pt.X - offsetX + 20, pt.Y - offsetY + 20, 0, 0);
 
                 PerformOcrFromFrozenImage((int)x, (int)y, (int)w, (int)h);
             }

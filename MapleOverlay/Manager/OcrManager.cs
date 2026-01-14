@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic; // Dictionary 사용
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -11,30 +11,75 @@ namespace MapleOverlay.Manager
     {
         private TesseractEngine _engine;
         
-        // 오타 교정 사전 (자주 틀리는 글자 매핑)
         private Dictionary<string, string> _typoDictionary = new Dictionary<string, string>
         {
-            { "큼", "쿰" }, // 자쿰 -> 자큼 오인식 수정
+            { "큼", "쿰" },
             { "자큼", "자쿰" },
-            { "핑크빈", "핑크빈" }, // 예시
+            { "핑크빈", "핑크빈" },
             { "혼테일", "혼테일" }
         };
 
-        public OcrManager(string dataPath = "./tessdata", string language = "kor")
+        public OcrManager(string language = "kor")
         {
             try
             {
+                string basePath = AppDomain.CurrentDomain.BaseDirectory;
+                string dataPath = Path.Combine(basePath, "tessdata");
+
+                Log($"[Init] Base Path: {basePath}");
+                Log($"[Init] Data Path: {dataPath}");
+
+                if (!Directory.Exists(dataPath))
+                {
+                    Log("[Error] tessdata folder NOT found!");
+                    string upPath = Path.Combine(basePath, "..", "tessdata");
+                    if (Directory.Exists(upPath))
+                    {
+                        dataPath = upPath;
+                        Log($"[Init] Found in parent: {dataPath}");
+                    }
+                }
+                else
+                {
+                    Log("[Init] tessdata folder found.");
+                    string trainFile = Path.Combine(dataPath, $"{language}.traineddata");
+                    if (File.Exists(trainFile))
+                    {
+                        Log($"[Init] {language}.traineddata found.");
+                    }
+                    else
+                    {
+                        Log($"[Error] {language}.traineddata NOT found at {trainFile}");
+                    }
+                }
+
                 _engine = new TesseractEngine(dataPath, language, EngineMode.LstmOnly);
+                Log("[Init] Engine initialized successfully.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"OCR 엔진 초기화 실패: {ex.Message}");
+                Log($"[Error] Engine Init Failed: {ex.Message}");
+                Log($"[Error] StackTrace: {ex.StackTrace}");
             }
+        }
+
+        private void Log(string message)
+        {
+            try
+            {
+                string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ocr_log.txt");
+                File.AppendAllText(logPath, $"{DateTime.Now}: {message}\n");
+            }
+            catch { }
         }
 
         public string RecognizeText(Bitmap bitmap)
         {
-            if (_engine == null) return null;
+            if (_engine == null)
+            {
+                Log("[Error] Engine is null. Cannot recognize.");
+                return null;
+            }
 
             try
             {
@@ -58,6 +103,7 @@ namespace MapleOverlay.Manager
                             {
                                 var text = page.GetText()?.Trim();
                                 var confidence = page.GetMeanConfidence();
+                                Log($"[Recognize] SingleLine: '{text}' (Conf: {confidence})");
 
                                 if (!string.IsNullOrWhiteSpace(text) && confidence > 0.6)
                                 {
@@ -70,6 +116,7 @@ namespace MapleOverlay.Manager
                                 using (var pageRetry = _engine.Process(pix, PageSegMode.RawLine))
                                 {
                                     var text = pageRetry.GetText()?.Trim();
+                                    Log($"[Recognize] RawLine: '{text}'");
                                     if (!string.IsNullOrWhiteSpace(text)) resultText = text;
                                 }
                             }
@@ -79,10 +126,10 @@ namespace MapleOverlay.Manager
                                 using (var pageRetry2 = _engine.Process(pix, PageSegMode.SparseText))
                                 {
                                     resultText = pageRetry2.GetText()?.Trim();
+                                    Log($"[Recognize] SparseText: '{resultText}'");
                                 }
                             }
 
-                            // 오타 교정 적용
                             return CorrectTypo(resultText);
                         }
                     }
@@ -90,23 +137,20 @@ namespace MapleOverlay.Manager
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"OCR 인식 실패: {ex.Message}");
+                Log($"[Error] Recognition Failed: {ex.Message}");
                 return null;
             }
         }
 
-        // 오타 교정 메서드
         private string CorrectTypo(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return text;
 
-            // 1. 단어 전체가 사전에 있는지 확인 (예: "자큼" -> "자쿰")
             if (_typoDictionary.ContainsKey(text))
             {
                 return _typoDictionary[text];
             }
 
-            // 2. 부분 문자열 교정 (예: "카오스 자큼의 투구" -> "카오스 자쿰의 투구")
             foreach (var entry in _typoDictionary)
             {
                 if (text.Contains(entry.Key))
@@ -138,6 +182,7 @@ namespace MapleOverlay.Manager
             Bitmap sharpened = ApplySharpen(padded);
             padded.Dispose();
 
+            // [수정] sharpened 변수를 사용하여 LockBits 호출
             BitmapData data = sharpened.LockBits(new Rectangle(0, 0, sharpened.Width, sharpened.Height), 
                                               ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
 
@@ -145,7 +190,7 @@ namespace MapleOverlay.Manager
             byte[] rgbValues = new byte[bytes];
             System.Runtime.InteropServices.Marshal.Copy(data.Scan0, rgbValues, 0, bytes);
 
-            int blackPoint = 20;
+            int blackPoint = 20; 
             int whitePoint = 160;
 
             for (int i = 0; i < rgbValues.Length; i += 4)

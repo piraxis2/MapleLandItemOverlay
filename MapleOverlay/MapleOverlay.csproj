@@ -6,6 +6,18 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
+        
+        <!-- 단일 파일 배포 끄기 (안정성 최우선) -->
+        <PublishSingleFile>false</PublishSingleFile>
+        <SelfContained>true</SelfContained>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        
+        <!-- 디버그 심볼(.pdb) 제거 -->
+        <DebugType>none</DebugType>
+        <DebugSymbols>false</DebugSymbols>
+        
+        <!-- 불필요한 파일 제거 -->
+        <AllowedReferenceRelatedFileExtensions>.dll</AllowedReferenceRelatedFileExtensions>
     </PropertyGroup>
 
     <ItemGroup>
@@ -14,5 +26,30 @@
       <PackageReference Include="Tesseract" Version="5.2.0" />
       <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
     </ItemGroup>
+
+    <!-- tessdata 폴더 복사 -->
+    <ItemGroup>
+        <Content Include="tessdata\**">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </Content>
+    </ItemGroup>
+
+    <!-- x64 폴더 복사 -->
+    <Target Name="CopyNativeLibsToPublish" AfterTargets="Publish">
+        <ItemGroup>
+            <NativeLibs Include="$(OutDir)x64\**" />
+        </ItemGroup>
+        <Copy SourceFiles="@(NativeLibs)" 
+              DestinationFolder="$(PublishDir)\x64\%(RecursiveDir)" 
+              SkipUnchangedFiles="true" />
+        
+        <ItemGroup>
+            <TessDataFiles Include="tessdata\**" />
+        </ItemGroup>
+        <Copy SourceFiles="@(TessDataFiles)" 
+              DestinationFolder="$(PublishDir)\tessdata\%(RecursiveDir)" 
+              SkipUnchangedFiles="true" />
+    </Target>
 
 </Project>
