@@ -378,6 +378,15 @@
                     <TextBox x:Name="InputKeyCapture" Grid.Column="1" Height="25" Text="`" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#333333" Foreground="White" BorderThickness="0" IsReadOnly="True" PreviewKeyDown="InputKey_PreviewKeyDown" Tag="Capture"/>
                 </Grid>
 
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="80"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="수동 검색" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBox x:Name="InputKeyManualSearch" Grid.Column="1" Height="25" Text="\" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#333333" Foreground="White" BorderThickness="0" IsReadOnly="True" PreviewKeyDown="InputKey_PreviewKeyDown" Tag="ManualSearch"/>
+                </Grid>
+
                 <Grid Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -404,38 +413,74 @@
             </Border>
             <Rectangle x:Name="SelectionRect" Stroke="#00FF00" StrokeThickness="2" Fill="#3300FF00" Visibility="Collapsed"/>
         </Canvas>
-    <Button x:Name="FloatingMenuButton"
-        Content="☰"
-        PreviewMouseLeftButtonDown="Panel_MouseLeftButtonDown"
-        PreviewMouseLeftButtonUp="FloatingMenuButton_PreviewMouseLeftButtonUp"
-        HorizontalAlignment="Right"
-        VerticalAlignment="Top"
-        Margin="0,10,10,0"
-        Width="40"
-        Height="40"
-        FontWeight="Bold"
-        FontSize="16"
-        Panel.ZIndex="999">
-    <Button.Style>
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#77000000"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="20">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#AA000000"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-    </Button.Style>
-</Button>
+
+        <!-- 9. 플로팅 컨트롤 패널 -->
+        <Border x:Name="FloatingControlPanel"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,10,10,0"
+                Background="#99000000"
+                CornerRadius="5"
+                Padding="0"
+                MouseLeftButtonDown="Panel_MouseLeftButtonDown"
+                Panel.ZIndex="999">
+            <StackPanel>
+                <!-- 드래그 핸들 영역 -->
+                <Border Background="Transparent" Height="12" Cursor="SizeAll" ToolTip="드래그하여 이동">
+                    <TextBlock Text="::::" Foreground="#888888" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="8" FontWeight="Bold"/>
+                </Border>
+                
+                <!-- 버튼 영역 -->
+                <StackPanel Orientation="Horizontal" Margin="5,0,5,5">
+                    <Button x:Name="BtnOpenMenu" 
+                            Content="☰" 
+                            Width="20" Height="20" 
+                            Background="Transparent" 
+                            Foreground="White" 
+                            BorderThickness="0" 
+                            FontWeight="Bold" 
+                            FontSize="12"
+                            Click="BtnOpenMenu_Click"
+                            Cursor="Hand"
+                            ToolTip="메뉴 열기"/>
+                    
+                    <Button x:Name="BtnMinimizeControl" 
+                            Content="─" 
+                            Width="15" Height="20" 
+                            Margin="5,0,0,0"
+                            Background="Transparent" 
+                            Foreground="#AAAAAA" 
+                            BorderThickness="0" 
+                            FontWeight="Bold" 
+                            FontSize="10"
+                            Click="BtnMinimizeControl_Click"
+                            Cursor="Hand"
+                            ToolTip="최소화"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 10. 최소화된 컨트롤 패널 -->
+        <Border x:Name="MinimizedControlPanel"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,10,10,0"
+                Width="25" Height="25"
+                Background="#55000000"
+                CornerRadius="12.5"
+                Visibility="Hidden"
+                MouseLeftButtonDown="Panel_MouseLeftButtonDown"
+                Panel.ZIndex="999">
+            <Button Content="+" 
+                    Width="25" Height="25" 
+                    Background="Transparent" 
+                    Foreground="White" 
+                    BorderThickness="0" 
+                    FontWeight="Bold" 
+                    FontSize="14"
+                    Click="BtnRestoreControl_Click"
+                    Cursor="Hand"
+                    ToolTip="복원"/>
+        </Border>
     </Grid>
 </Window>

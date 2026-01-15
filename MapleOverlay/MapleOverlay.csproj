@@ -7,6 +7,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
         <PlatformTarget>x64</PlatformTarget>
+        <ApplicationIcon>유령.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -30,6 +31,10 @@
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
         </Content>
+    </ItemGroup>
+    <ItemGroup>
+      <None Remove="유령.ico" />
+      <Resource Include="유령.ico" />
     </ItemGroup>
 
     <!-- [핵심] Publish 후 파일 정리 (DLL -> lib 폴더 이동) -->

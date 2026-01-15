@@ -12,6 +12,10 @@ namespace MapleOverlay.Manager
         public int KeyExit { get; set; } = 0x79; // F10 (VK_F10)
         public int KeyClosePanel { get; set; } = 0x1B; // ESC (VK_ESCAPE)
         public int KeyMenu { get; set; } = 0x7B; // F12 (VK_F12)
+
+        // 플로팅 패널 위치 저장 (TranslateTransform 값)
+        public double FloatingPanelX { get; set; } = 0;
+        public double FloatingPanelY { get; set; } = 0;
     }
 
     public class ConfigManager
