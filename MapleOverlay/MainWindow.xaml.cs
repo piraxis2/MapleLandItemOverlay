@@ -636,6 +636,12 @@ namespace MapleOverlay
         {
             _isInfoPanelVisible = true;
             
+            // 클릭 가능하도록 먼저 설정
+            SetClickThrough(false);
+            
+            // 윈도우를 활성화하여 포커스를 받을 수 있게 함
+            this.Activate();
+            
             ItemNameText.Text = "아이템 검색";
             ItemReqText.Visibility = Visibility.Collapsed;
             ReqSeparator.Visibility = Visibility.Collapsed;
@@ -644,9 +650,13 @@ namespace MapleOverlay
             DescSeparator.Visibility = Visibility.Collapsed;
             
             SearchInput.Text = "";
-            SearchInput.Focus();
             
-            SetClickThrough(false);
+            // 포커스 강제 설정
+            Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+            {
+                SearchInput.Focus();
+                Keyboard.Focus(SearchInput);
+            }));
         }
 
         private void CloseButton_Click(object _, RoutedEventArgs __)
