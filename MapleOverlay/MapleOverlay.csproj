@@ -8,6 +8,7 @@
         <UseWPF>true</UseWPF>
         <PlatformTarget>x64</PlatformTarget>
         <ApplicationIcon>유령.ico</ApplicationIcon>
+        <AssemblyName>ML_Overlay</AssemblyName>
     </PropertyGroup>
 
     <ItemGroup>
@@ -42,13 +43,13 @@
         <!-- 1. lib 폴더 생성 -->
         <MakeDir Directories="$(PublishDir)lib" />
 
-        <!-- 2. 루트에 있는 .dll 파일들을 찾음 (단, 실행 파일과 관련된 MapleOverlay.dll 등은 제외해야 할 수도 있음) -->
+        <!-- 2. 루트에 있는 .dll 파일들을 찾음 (단, 실행 파일과 관련된 ML_Overlay.dll 등은 제외해야 할 수도 있음) -->
         <!-- 여기서는 모든 .dll을 옮기되, 실행에 필수적인 런타임 파일이 섞여 있을 수 있으므로 주의해야 함. -->
         <!-- 안전하게: NuGet 패키지로 들어온 주요 DLL들만 명시적으로 옮기거나, 
              패턴 매칭으로 옮기되 런타임 호스트(hostfxr 등)는 건드리지 않도록 함. -->
         
         <ItemGroup>
-            <DllsToMove Include="$(PublishDir)*.dll" Exclude="$(PublishDir)MapleOverlay.dll" />
+            <DllsToMove Include="$(PublishDir)*.dll" Exclude="$(PublishDir)ML_Overlay.dll" />
         </ItemGroup>
 
         <!-- 3. 파일 이동 -->
