@@ -11,6 +11,7 @@ namespace MapleOverlay.Manager
         public int KeyManualSearch { get; set; } = 0xDC; // \ (VK_OEM_5)
         public int KeyExit { get; set; } = 0x79; // F10 (VK_F10)
         public int KeyClosePanel { get; set; } = 0x1B; // ESC (VK_ESCAPE)
+        public int KeyMenu { get; set; } = 0x7B; // F12 (VK_F12)
     }
 
     public class ConfigManager
@@ -32,6 +33,9 @@ namespace MapleOverlay.Manager
                 {
                     string json = File.ReadAllText(path);
                     Config = JsonConvert.DeserializeObject<AppConfig>(json);
+                    
+                    // 새로 추가된 필드가 null이거나 0일 경우 기본값 설정 (기존 설정 파일 호환성)
+                    if (Config.KeyMenu == 0) Config.KeyMenu = 0x7B; // F12
                 }
                 else
                 {

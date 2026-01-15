@@ -52,6 +52,7 @@ namespace MapleOverlay
         
         private bool _isExitKeyDown;
         private bool _isCaptureKeyDown;
+        private bool _isMenuKeyDown;
 
         private bool _isDragging;
         private System.Windows.Point _startPoint;
@@ -70,6 +71,11 @@ namespace MapleOverlay
         private System.Windows.Point _dragOrigin; // 클릭 판별을 위한 드래그 시작 원점
         private bool _isPanelDragging;
         private FrameworkElement? _draggedPanel;
+
+        // 설정 임시 저장용 변수
+        private int _tempKeyMenu;
+        private int _tempKeyCapture;
+        private int _tempKeyClose;
 
         private enum CaptureMode { Item, ExpUi }
         private CaptureMode _currentCaptureMode;
@@ -215,7 +221,7 @@ namespace MapleOverlay
             }
 
             var cfg = _configManager.Config;
-            KeyGuideText.Text = $"캡처: ` | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
+            KeyGuideText.Text = $"메뉴: {GetKeyName(cfg.KeyMenu)} | 캡처: {GetKeyName(cfg.KeyCapture)} | 닫기: {GetKeyName(cfg.KeyClosePanel)}";
             
             if (MenuKeyGuideText != null)
             {
@@ -249,20 +255,21 @@ namespace MapleOverlay
         {
             var cfg = _configManager.Config;
 
-            if ((GetAsyncKeyState(cfg.KeyExit) & 0x8000) != 0)
+            // 메뉴 단축키 (기본 F12)
+            if ((GetAsyncKeyState(cfg.KeyMenu) & 0x8000) != 0)
             {
-                if (!_isExitKeyDown)
+                if (!_isMenuKeyDown)
                 {
-                    _isExitKeyDown = true;
-                    Application.Current.Shutdown();
-                    return;
+                    _isMenuKeyDown = true;
+                    ToggleModeSelection();
                 }
             }
             else
             {
-                _isExitKeyDown = false;
+                _isMenuKeyDown = false;
             }
 
+            // 닫기 단축키 (기본 ESC)
             if ((GetAsyncKeyState(cfg.KeyClosePanel) & 0x8000) != 0)
             {
                 CloseAllPanels();
@@ -291,7 +298,7 @@ namespace MapleOverlay
                 this.Height = SystemParameters.PrimaryScreenHeight;
             }
 
-            bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible || RealTimeExpPanel.Visibility == Visibility.Visible || MinimizedExpPanel.Visibility == Visibility.Visible || MinimizedRealTimePanel.Visibility == Visibility.Visible;
+            bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible || RealTimeExpPanel.Visibility == Visibility.Visible || MinimizedExpPanel.Visibility == Visibility.Visible || MinimizedRealTimePanel.Visibility == Visibility.Visible || SettingsPanel.Visibility == Visibility.Visible;
             
             var hwnd = new WindowInteropHelper(this).Handle;
             int extendedStyle = GetWindowLong(hwnd, -20);
@@ -313,8 +320,8 @@ namespace MapleOverlay
                 SetClickThrough(true);
             }
 
-            // ` 키로 아이템 캡처 바로 실행
-            bool isCaptureKeyDown = (GetAsyncKeyState(0xC0) & 0x8000) != 0;
+            // 캡처 단축키 (기본 `)
+            bool isCaptureKeyDown = (GetAsyncKeyState(cfg.KeyCapture) & 0x8000) != 0;
             if (isCaptureKeyDown && !_isCaptureKeyDown)
             {
                 _isCaptureKeyDown = true;
@@ -340,6 +347,7 @@ namespace MapleOverlay
             else
             {
                 ModeSelectionPanel.Visibility = Visibility.Visible;
+                SettingsPanel.Visibility = Visibility.Collapsed; // 설정 패널이 열려있으면 닫음
             }
         }
 
@@ -350,6 +358,7 @@ namespace MapleOverlay
             ExpPanel.Visibility = Visibility.Hidden;
             RealTimeExpPanel.Visibility = Visibility.Hidden;
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            SettingsPanel.Visibility = Visibility.Collapsed;
             MinimizedExpPanel.Visibility = Visibility.Hidden;
             MinimizedRealTimePanel.Visibility = Visibility.Hidden;
             
@@ -360,6 +369,82 @@ namespace MapleOverlay
             
             StopRealTimeTracking();
             StopExpTimer();
+        }
+
+        // --- 설정 관련 로직 ---
+
+        private void BtnSettings_Click(object _, RoutedEventArgs __)
+        {
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
+            SettingsPanel.Visibility = Visibility.Visible;
+
+            // 현재 설정값 로드
+            var cfg = _configManager.Config;
+            _tempKeyMenu = cfg.KeyMenu;
+            _tempKeyCapture = cfg.KeyCapture;
+            _tempKeyClose = cfg.KeyClosePanel;
+
+            UpdateSettingsUi();
+        }
+
+        private void UpdateSettingsUi()
+        {
+            string GetKeyName(int keyCode)
+            {
+                if (keyCode == 0xC0) return "`";
+                if (keyCode == 0xDC) return "\\";
+                if (keyCode >= 0x70 && keyCode <= 0x7B) return "F" + (keyCode - 0x6F);
+                if (keyCode == 0x1B) return "ESC";
+                return ((Key)KeyInterop.KeyFromVirtualKey(keyCode)).ToString();
+            }
+
+            InputKeyMenu.Text = GetKeyName(_tempKeyMenu);
+            InputKeyCapture.Text = GetKeyName(_tempKeyCapture);
+            InputKeyClose.Text = GetKeyName(_tempKeyClose);
+        }
+
+        private void InputKey_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            e.Handled = true;
+            int vKey = KeyInterop.VirtualKeyFromKey(e.Key);
+            
+            // 특수 키 처리 (System Key 등)
+            if (e.Key == Key.System) vKey = KeyInterop.VirtualKeyFromKey(e.SystemKey);
+
+            if (sender is TextBox textBox)
+            {
+                string tag = textBox.Tag.ToString();
+                if (tag == "Menu") _tempKeyMenu = vKey;
+                else if (tag == "Capture") _tempKeyCapture = vKey;
+                else if (tag == "Close") _tempKeyClose = vKey;
+
+                UpdateSettingsUi();
+            }
+        }
+
+        private void BtnSaveSettings_Click(object _, RoutedEventArgs __)
+        {
+            var cfg = _configManager.Config;
+            cfg.KeyMenu = _tempKeyMenu;
+            cfg.KeyCapture = _tempKeyCapture;
+            cfg.KeyClosePanel = _tempKeyClose;
+            
+            _configManager.SaveConfig();
+            UpdateKeyGuide();
+            
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            ModeSelectionPanel.Visibility = Visibility.Visible;
+        }
+
+        private void BtnCancelSettings_Click(object _, RoutedEventArgs __)
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            ModeSelectionPanel.Visibility = Visibility.Visible;
+        }
+
+        private void BtnCloseMenu_Click(object _, RoutedEventArgs __)
+        {
+            ModeSelectionPanel.Visibility = Visibility.Collapsed;
         }
 
         private void ModeCaptureExpUI_Click(object _, RoutedEventArgs __)
@@ -406,6 +491,11 @@ namespace MapleOverlay
             ModeSelectionPanel.Visibility = Visibility.Collapsed;
             InfoPanel.Visibility = Visibility.Visible;
             OpenManualSearch();
+        }
+
+        private void BtnExitApp_Click(object _, RoutedEventArgs __)
+        {
+            Application.Current.Shutdown();
         }
 
         private void BtnUpdateExp_Click(object _, RoutedEventArgs __)

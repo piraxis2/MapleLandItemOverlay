@@ -72,7 +72,7 @@
                 <!-- 단축키 안내 -->
                 <TextBlock x:Name="KeyGuideText" 
                            Grid.Row="3"
-                           Text="메뉴: F11 | 캡처: ` | 닫기: ESC | 종료: F10" 
+                           Text="메뉴: F12 | 캡처: ` | 닫기: ESC" 
                            Foreground="#888888" 
                            FontSize="11" 
                            HorizontalAlignment="Center"
@@ -345,13 +345,56 @@
                 
                 <Button Content="⏱ 실시간 경험치" Height="40" Margin="0,0,0,10" Click="ModeRealTimeExp_Click" Background="#333333" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Visibility="Collapsed"/>
                 <Button Content="⏱ 경험치 타이머" Height="40" Margin="0,0,0,10" Click="ModeExp_Click" Background="#333333" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand" Visibility="Collapsed"/>
-                <Button Content="⌨ 수동 검색" Height="40" Click="ModeManual_Click" Background="#333333" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand"/>
+                <Button Content="⌨ 수동 검색" Height="40" Margin="0,0,0,10" Click="ModeManual_Click" Background="#333333" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand"/>
                 
-                <TextBlock x:Name="MenuKeyGuideText" Text="(단축키: F11)" Foreground="#666666" HorizontalAlignment="Center" Margin="0,15,0,0" FontSize="11"/>
+                <Button Content="⚙ 설정" Height="40" Margin="0,0,0,10" Click="BtnSettings_Click" Background="#333333" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand"/>
+                <Button Content="✕ 닫기" Height="40" Margin="0,0,0,10" Click="BtnCloseMenu_Click" Background="#444444" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand"/>
+                <Button Content="❌ 종료" Height="40" Click="BtnExitApp_Click" Background="#AA0000" Foreground="White" FontSize="14" BorderThickness="0" Cursor="Hand"/>
+                
+                <TextBlock x:Name="MenuKeyGuideText" Text="(단축키: F12)" Foreground="#666666" HorizontalAlignment="Center" Margin="0,15,0,0" FontSize="11"/>
             </StackPanel>
         </Border>
 
-        <!-- 7. 캡처 모드용 오버레이 -->
+        <!-- 7. 설정 패널 -->
+        <Border x:Name="SettingsPanel" Width="250" Background="#EE111111" CornerRadius="10" BorderBrush="#555555" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+            <StackPanel Margin="15">
+                <TextBlock Text="단축키 설정" Foreground="#DDDDDD" HorizontalAlignment="Center" Margin="0,0,0,15" FontSize="16" FontWeight="Bold"/>
+                
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="80"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="메뉴 열기" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBox x:Name="InputKeyMenu" Grid.Column="1" Height="25" Text="F12" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#333333" Foreground="White" BorderThickness="0" IsReadOnly="True" PreviewKeyDown="InputKey_PreviewKeyDown" Tag="Menu"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="80"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="아이템 캡처" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBox x:Name="InputKeyCapture" Grid.Column="1" Height="25" Text="`" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#333333" Foreground="White" BorderThickness="0" IsReadOnly="True" PreviewKeyDown="InputKey_PreviewKeyDown" Tag="Capture"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="80"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="패널 닫기" Foreground="White" VerticalAlignment="Center"/>
+                    <TextBox x:Name="InputKeyClose" Grid.Column="1" Height="25" Text="ESC" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#333333" Foreground="White" BorderThickness="0" IsReadOnly="True" PreviewKeyDown="InputKey_PreviewKeyDown" Tag="Close"/>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="저장" Width="80" Height="30" Margin="0,0,10,0" Click="BtnSaveSettings_Click" Background="#006600" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                    <Button Content="취소" Width="80" Height="30" Click="BtnCancelSettings_Click" Background="#444444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 8. 캡처 모드용 오버레이 -->
         <Canvas x:Name="CaptureCanvas" Background="#01000000" Visibility="Collapsed" MouseDown="CaptureCanvas_MouseDown" MouseMove="CaptureCanvas_MouseMove" MouseUp="CaptureCanvas_MouseUp">
             <Border Background="#88000000" CornerRadius="5" Canvas.Left="10" Canvas.Top="10" Padding="10">
                 <StackPanel>
