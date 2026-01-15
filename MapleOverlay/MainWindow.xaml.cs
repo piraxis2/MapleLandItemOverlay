@@ -33,6 +33,10 @@ namespace MapleOverlay
         static extern short GetAsyncKeyState(int vKey);
         [DllImport("gdi32.dll")]
         public static extern bool DeleteObject(IntPtr hObject);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool GetCursorPos(out Point lpPoint);
+
 
         [StructLayout(LayoutKind.Sequential)]
         public struct Rect { public int Left, Top, Right, Bottom; }
@@ -46,7 +50,6 @@ namespace MapleOverlay
         private OcrManager _ocrManager;
         private ConfigManager _configManager;
         
-        private bool _isSearchKeyDown;
         private bool _isExitKeyDown;
         private bool _isCaptureKeyDown;
 
@@ -61,7 +64,10 @@ namespace MapleOverlay
         private TranslateTransform _realTimeExpPanelTransform = new TranslateTransform();
         private TranslateTransform _minimizedExpPanelTransform = new TranslateTransform();
         private TranslateTransform _minimizedRealTimePanelTransform = new TranslateTransform();
+        private TranslateTransform _floatingMenuButtonTransform = new TranslateTransform();
+        
         private System.Windows.Point _panelDragStart;
+        private System.Windows.Point _dragOrigin; // 클릭 판별을 위한 드래그 시작 원점
         private bool _isPanelDragging;
         private FrameworkElement? _draggedPanel;
 
@@ -95,6 +101,7 @@ namespace MapleOverlay
             RealTimeExpPanel.RenderTransform = _realTimeExpPanelTransform;
             MinimizedExpPanel.RenderTransform = _minimizedExpPanelTransform;
             MinimizedRealTimePanel.RenderTransform = _minimizedRealTimePanelTransform;
+            FloatingMenuButton.RenderTransform = _floatingMenuButtonTransform;
 
             UpdateKeyGuide();
 
@@ -113,6 +120,11 @@ namespace MapleOverlay
             SearchInput.LostFocus += (_, _) => { if (string.IsNullOrWhiteSpace(SearchInput.Text)) SearchInput.Text = "직접 검색..."; };
         }
 
+        private void FloatingMenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            // 클릭 로직은 PreviewMouseLeftButtonUp에서 처리합니다.
+        }
+
         private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (sender is FrameworkElement panel)
@@ -120,7 +132,31 @@ namespace MapleOverlay
                 _isPanelDragging = true;
                 _draggedPanel = panel;
                 _panelDragStart = e.GetPosition(this);
+                _dragOrigin = _panelDragStart; // 시작 위치 저장
                 panel.CaptureMouse();
+                e.Handled = true;
+            }
+        }
+
+        private void FloatingMenuButton_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_isPanelDragging && _draggedPanel == FloatingMenuButton)
+            {
+                var currentPos = e.GetPosition(this);
+                double dist = (currentPos - _dragOrigin).Length;
+                
+                // 드래그 종료 처리
+                _isPanelDragging = false;
+                _draggedPanel?.ReleaseMouseCapture();
+                _draggedPanel = null;
+
+                // 이동 거리가 짧으면 클릭으로 간주
+                if (dist < 5.0)
+                {
+                    ToggleModeSelection();
+                }
+                
+                e.Handled = true;
             }
         }
 
@@ -133,15 +169,19 @@ namespace MapleOverlay
                 var currentPos = e.GetPosition(this);
                 var diff = currentPos - _panelDragStart;
                 
-                TranslateTransform transform;
+                TranslateTransform? transform = null;
                 if (_draggedPanel == InfoPanel) transform = _infoPanelTransform;
                 else if (_draggedPanel == ExpPanel) transform = _expPanelTransform;
                 else if (_draggedPanel == RealTimeExpPanel) transform = _realTimeExpPanelTransform;
                 else if (_draggedPanel == MinimizedExpPanel) transform = _minimizedExpPanelTransform;
-                else transform = _minimizedRealTimePanelTransform;
-                
-                transform.X += diff.X;
-                transform.Y += diff.Y;
+                else if (_draggedPanel == MinimizedRealTimePanel) transform = _minimizedRealTimePanelTransform;
+                else if (_draggedPanel == FloatingMenuButton) transform = _floatingMenuButtonTransform;
+
+                if (transform != null)
+                {
+                    transform.X += diff.X;
+                    transform.Y += diff.Y;
+                }
                 
                 _panelDragStart = currentPos;
             }
@@ -150,11 +190,16 @@ namespace MapleOverlay
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
             base.OnMouseLeftButtonUp(e);
-            if (_isPanelDragging && _draggedPanel != null)
+            if (_isPanelDragging)
             {
-                _isPanelDragging = false;
-                _draggedPanel.ReleaseMouseCapture();
-                _draggedPanel = null;
+                // FloatingMenuButton은 별도의 핸들러에서 처리하므로 여기서는 무시하거나 중복 방지
+                if (_draggedPanel != FloatingMenuButton)
+                {
+                    // 약간의 지연을 주어 드래그 직후 클릭 이벤트가 발생하는 것을 방지
+                    Task.Delay(50).ContinueWith(_ => Dispatcher.Invoke(() => _isPanelDragging = false));
+                    _draggedPanel?.ReleaseMouseCapture();
+                    _draggedPanel = null;
+                }
             }
         }
 
@@ -170,7 +215,7 @@ namespace MapleOverlay
             }
 
             var cfg = _configManager.Config;
-            KeyGuideText.Text = $"메뉴: F11 | 캡처: ` | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
+            KeyGuideText.Text = $"캡처: ` | 닫기: {GetKeyName(cfg.KeyClosePanel)} | 종료: {GetKeyName(cfg.KeyExit)}";
             
             if (MenuKeyGuideText != null)
             {
@@ -248,35 +293,24 @@ namespace MapleOverlay
 
             bool isAnyPanelVisible = _isInfoPanelVisible || ExpPanel.Visibility == Visibility.Visible || ModeSelectionPanel.Visibility == Visibility.Visible || RealTimeExpPanel.Visibility == Visibility.Visible || MinimizedExpPanel.Visibility == Visibility.Visible || MinimizedRealTimePanel.Visibility == Visibility.Visible;
             
-            if (isAnyPanelVisible)
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                int extendedStyle = GetWindowLong(hwnd, -20);
-                if ((extendedStyle & 0x20) != 0)
-                {
-                    SetClickThrough(false);
-                }
-            }
-            else
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                int extendedStyle = GetWindowLong(hwnd, -20);
-                if ((extendedStyle & 0x20) == 0)
-                {
-                    SetClickThrough(true);
-                }
-            }
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int extendedStyle = GetWindowLong(hwnd, -20);
+            bool isClickThrough = (extendedStyle & 0x20) != 0;
 
-            // F11 키로 메뉴 토글
-            bool isMenuKeyDown = (GetAsyncKeyState(0x7A) & 0x8000) != 0;
-            if (isMenuKeyDown && !_isSearchKeyDown)
+            GetCursorPos(out Point cursor);
+            var buttonPos = FloatingMenuButton.PointToScreen(new System.Windows.Point(0, 0));
+            var buttonRect = new System.Windows.Rect(buttonPos.X, buttonPos.Y, FloatingMenuButton.ActualWidth, FloatingMenuButton.ActualHeight);
+            bool isMouseOverButton = buttonRect.Contains(new System.Windows.Point(cursor.X, cursor.Y));
+
+            bool shouldBeClickable = isAnyPanelVisible || isMouseOverButton || _draggedPanel != null;
+
+            if (shouldBeClickable && isClickThrough)
             {
-                _isSearchKeyDown = true;
-                ToggleModeSelection();
+                SetClickThrough(false);
             }
-            else if (!isMenuKeyDown)
+            else if (!shouldBeClickable && !isClickThrough)
             {
-                _isSearchKeyDown = false;
+                SetClickThrough(true);
             }
 
             // ` 키로 아이템 캡처 바로 실행
@@ -326,7 +360,6 @@ namespace MapleOverlay
             
             StopRealTimeTracking();
             StopExpTimer();
-            SetClickThrough(true);
         }
 
         private void ModeCaptureExpUI_Click(object _, RoutedEventArgs __)
@@ -945,6 +978,25 @@ namespace MapleOverlay
                 ItemStatsText.Text = "옵션 정보 없음";
                 ItemStatsText.Visibility = Visibility.Visible;
                 DescSeparator.Visibility = Visibility.Collapsed;
+            }
+
+            // 상점가 정보 추가 (metaInfo.price 우선 확인)
+            int? price = item["metaInfo"]?["price"]?.ToObject<int>();
+            
+            // metaInfo에 없으면 shop.price 확인 (구조가 다를 수 있으므로 주의)
+            if (!price.HasValue)
+            {
+                price = item["shop"]?["price"]?.ToObject<int>();
+            }
+
+            if (price.HasValue && price > 0)
+            {
+                ItemPriceText.Text = $"상점가: {price:N0} 메소";
+                ItemPriceText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ItemPriceText.Visibility = Visibility.Collapsed;
             }
 
             string? desc = forcedDesc;

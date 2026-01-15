@@ -7,12 +7,11 @@ public class MapleApiManager
 {
     private static readonly HttpClient client = new HttpClient();
     
-    // 검색용: KMS 최신 버전 (한글 이름 검색을 위해 필요)
+    // 검색용: KMS 최신 버전 (한글 이름 검색 및 ID 확인용)
     private const string SearchBaseUrl = "https://maplestory.io/api/KMS/384";
     
-    // 상세 정보용: GMS 구버전 (클래식 스탯 정보를 위해 필요)
-    // GMS는 영어 기반이지만 ID 체계는 공유하므로 ID로 조회 가능
-    private const string DetailBaseUrl = "https://maplestory.io/api/GMS/100";
+    // 상세 정보용: GMS v62 (빅뱅 전 클래식 메이플 데이터 - 스탯 및 상점가용)
+    private const string DetailBaseUrl = "https://maplestory.io/api/GMS/62";
 
     // 1. 이름으로 아이템 검색 (KMS에서 ID 찾기)
     public async Task<JArray> SearchItemAsync(string itemName)
@@ -32,11 +31,13 @@ public class MapleApiManager
         }
     }
 
-    // 2. ID로 상세 정보 조회 (GMS v100에서 옵션 가져오기)
+    // 2. ID로 상세 정보 조회 (GMS v62 데이터만 사용)
     public async Task<JObject> GetItemDetailAsync(int itemId)
     {
         try
         {
+            // GMS v62 데이터만 가져옵니다. (정확한 클래식 스탯 및 상점가)
+            // 한글 이름과 설명은 SearchItemAsync 결과에서 이미 확보하여 UI에 전달되므로 여기서 KMS를 다시 조회할 필요가 없습니다.
             string url = $"{DetailBaseUrl}/item/{itemId}";
             var response = await client.GetStringAsync(url);
             return JObject.Parse(response);
@@ -44,18 +45,7 @@ public class MapleApiManager
         catch (Exception ex)
         {
             Console.WriteLine($"Detail Error (GMS): {ex.Message}");
-            
-            // GMS에 데이터가 없으면 KMS 데이터라도 가져오도록 폴백(Fallback) 처리
-            try
-            {
-                string fallbackUrl = $"{SearchBaseUrl}/item/{itemId}";
-                var fallbackResponse = await client.GetStringAsync(fallbackUrl);
-                return JObject.Parse(fallbackResponse);
-            }
-            catch
-            {
-                return null;
-            }
+            return null;
         }
     }
 }
