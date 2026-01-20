@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Media.Imaging;
 using System.Linq;
 using System.Text;
+using System.Diagnostics;
 
 namespace MapleOverlay
 {
@@ -96,6 +97,8 @@ namespace MapleOverlay
         private TimeSpan _expTimerRemaining;
         private bool _isExpTimerRunning;
         private DateTime _expTimerStartTime;
+
+        private int _currentItemId = 0;
 
         public MainWindow()
         {
@@ -643,6 +646,7 @@ namespace MapleOverlay
             this.Activate();
             
             ItemNameText.Text = "아이템 검색";
+            LinkButton.Visibility = Visibility.Collapsed;
             ItemReqText.Visibility = Visibility.Collapsed;
             ReqSeparator.Visibility = Visibility.Collapsed;
             ItemStatsText.Text = "";
@@ -834,6 +838,7 @@ namespace MapleOverlay
             _isInfoPanelVisible = true;
             
             ItemNameText.Text = string.IsNullOrWhiteSpace(text) ? "인식 실패" : $"OCR: {text}";
+            LinkButton.Visibility = Visibility.Collapsed;
             
             ItemReqText.Visibility = Visibility.Collapsed;
             ReqSeparator.Visibility = Visibility.Collapsed;
@@ -1052,11 +1057,13 @@ namespace MapleOverlay
                 else
                 {
                     ItemDescText.Text = $"'{cleanName}' 검색 결과 없음";
+                    LinkButton.Visibility = Visibility.Collapsed;
                 }
             }
             catch (Exception ex)
             {
                 ItemDescText.Text = $"오류: {ex.Message}";
+                LinkButton.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -1072,6 +1079,19 @@ namespace MapleOverlay
                 }
             }
             ItemNameText.Text = name ?? "이름 없음";
+
+            // 아이템 ID 저장 및 링크 버튼 표시
+            int? id = item["id"]?.ToObject<int>();
+            if (id.HasValue && id.Value > 0)
+            {
+                _currentItemId = id.Value;
+                LinkButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _currentItemId = 0;
+                LinkButton.Visibility = Visibility.Collapsed;
+            }
 
             string reqInfo = ParseReqInfo(item);
             if (!string.IsNullOrEmpty(reqInfo))
@@ -1130,6 +1150,26 @@ namespace MapleOverlay
             }
             
             ItemDescText.Text = desc ?? "설명이 없습니다.";
+        }
+
+        private void LinkButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentItemId > 0)
+            {
+                try
+                {
+                    string url = $"https://mapleland.gg/item/{_currentItemId}";
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = url,
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"링크를 여는 중 오류가 발생했습니다: {ex.Message}");
+                }
+            }
         }
 
         private string ParseReqInfo(JToken item)
